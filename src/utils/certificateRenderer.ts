@@ -132,7 +132,7 @@ export function readAndOptimizeTemplateImage(file: File): Promise<string> {
       const img = new Image();
       img.onerror = () => reject(new Error('ไฟล์รูปภาพไม่ถูกต้อง'));
       img.onload = () => {
-        const maxDim = 2000;
+        const maxDim = 1800;
         let targetW = img.naturalWidth || 1600;
         let targetH = img.naturalHeight || 1131;
         if (targetW > maxDim || targetH > maxDim) {
@@ -152,10 +152,25 @@ export function readAndOptimizeTemplateImage(file: File): Promise<string> {
         ctx.fillRect(0, 0, targetW, targetH);
         ctx.drawImage(img, 0, 0, targetW, targetH);
         const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-        let resultDataUrl = canvas.toDataURL(outputType, 0.9);
-        // Keep payload well under Vercel Serverless 4.5 MB request body limit
-        if (resultDataUrl.length > 2_400_000) {
-          resultDataUrl = canvas.toDataURL('image/jpeg', 0.86);
+        let resultDataUrl = canvas.toDataURL(outputType, 0.88);
+        if (resultDataUrl.length > 900_000) {
+          resultDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        }
+        if (resultDataUrl.length > 900_000) {
+          resultDataUrl = canvas.toDataURL('image/jpeg', 0.68);
+        }
+        if (resultDataUrl.length > 900_000) {
+          const scale2 = Math.min(1400 / targetW, 1400 / targetH, 0.8);
+          const c2 = document.createElement('canvas');
+          c2.width = Math.max(800, Math.round(targetW * scale2));
+          c2.height = Math.max(565, Math.round(targetH * scale2));
+          const ctx2 = c2.getContext('2d');
+          if (ctx2) {
+            ctx2.fillStyle = '#ffffff';
+            ctx2.fillRect(0, 0, c2.width, c2.height);
+            ctx2.drawImage(canvas, 0, 0, c2.width, c2.height);
+            resultDataUrl = c2.toDataURL('image/jpeg', 0.72);
+          }
         }
         resolve(resultDataUrl);
       };

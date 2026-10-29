@@ -1,62 +1,70 @@
 import express from 'express';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  writeBatch,
+  serverTimestamp,
+} from 'firebase/firestore/lite';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const REPO_DATA_DIR = path.resolve(__dirname, '..', 'data');
-const REPO_STORE_PATH = path.join(REPO_DATA_DIR, 'store.json');
-const TMP_STORE_PATH = path.join(os.tmpdir(), 'sapha-sps-store.json');
-const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const FALLBACK_FIREBASE_CONFIG = {
+  projectId: 'gen-lang-client-0821174441',
+  appId: '1:101829149860:web:b76e49ba27fde5a6575231',
+  apiKey: 'AIzaSyDqwnur7evvigXhn4F76SesRetMSWoccU8',
+  authDomain: 'gen-lang-client-0821174441.firebaseapp.com',
+  firestoreDatabaseId: 'ai-studio-certiexam-7124decc-9b8d-46f0-b8ee-24d255306798',
+  storageBucket: 'gen-lang-client-0821174441.firebasestorage.app',
+  messagingSenderId: '101829149860',
+};
 
+function loadFirebaseConfig() {
+  const candidates = [
+    path.resolve(__dirname, '..', 'firebase-applet-config.json'),
+    path.resolve(process.cwd(), 'firebase-applet-config.json'),
+  ];
+  for (const cfgPath of candidates) {
+    try {
+      if (fs.existsSync(cfgPath)) {
+        const parsed = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+        if (parsed && parsed.projectId && parsed.apiKey) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Fallback to embedded public client config
+    }
+  }
+  return FALLBACK_FIREBASE_CONFIG;
+}
+
+const firebaseConfig = loadFirebaseConfig();
+const SERVER_APP_NAME = 'sapha-sps-server-lite';
+
+function getServerDb() {
+  const existing = getApps().find((a) => a.name === SERVER_APP_NAME);
+  const app = existing || initializeApp(firebaseConfig, SERVER_APP_NAME);
+  return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+}
+
+const VAULT_ID = process.env.SAPHA_VAULT_ID || 'sapha_sps_prod_v1_8c4e9f2a7b1d603e';
 const ADMIN_USER = '00000';
 const ADMIN_PASS = '00000';
 const ADMIN_TOKEN = 'SAPHA SPS-admin-00000';
 
-/** @type {{ exams: any[]; submissions: any[]; settings: any } | null} */
-let memoryStoreCache = null;
-
-export function getBangkokTodayDate() {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-}
-
-/**
- * @param {unknown} input
- * @param {string} fallback
- * @returns {string}
- */
-function normalizeDateString(input, fallback) {
-  if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.trim())) {
-    return input.trim();
-  }
-  if (typeof input === 'string' && input.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(input)) {
-    return input.slice(0, 10);
-  }
-  return fallback;
-}
-
-const DEFAULT_CERT_CONFIG = {
-  textColor: '#0f172a',
-  nameY: 42,
-  examTitleY: 55,
-  scoreY: 66,
-  dateY: 77,
-  nameSize: 54,
-  examTitleSize: 34,
-  scoreSize: 28,
-  dateSize: 25,
-};
+/** @type {Map<string, string>} */
+const templateMemoryCache = new Map();
 
 const BLANK_CERT_FRAME_SVG =
   'data:image/svg+xml;utf8,' +
@@ -70,141 +78,75 @@ const BLANK_CERT_FRAME_SVG =
     </svg>`
   );
 
-const SEED_EXAMS = [
-  {
-    id: 'exam-digital-literacy-101',
-    title: 'แบบทดสอบวัดสมรรถนะด้านเทคโนโลยีดิจิทัลและวิทยาการคำนวณ',
-    description:
-      'ประเมินความรู้พื้นฐานด้านอัลกอริทึม เครือข่ายอินเทอร์เน็ต และการใช้เทคโนโลยีสารสนเทศอย่างปลอดภัย (เกณฑ์ผ่าน 80%)',
-    passingPercent: 80,
-    publishDate: '2026-10-01',
-    certificatePublishDate: '2026-10-01',
-    certificateTemplate: BLANK_CERT_FRAME_SVG,
-    certificateConfig: { ...DEFAULT_CERT_CONFIG },
-    createdAt: '2026-10-01T08:00:00.000Z',
-    questions: [
-      {
-        id: 'q-1',
-        text: 'แนวคิดเชิงคำนวณ (Computational Thinking) ข้อใดหมายถึงการแบ่งปัญหาใหญ่ออกเป็นปัญหาย่อย ๆ เพื่อให้จัดการได้ง่ายขึ้น?',
-        options: [
-          'การแยกส่วนประกอบและการย่อยปัญหา (Decomposition)',
-          'การหารูปแบบของปัญหา (Pattern Recognition)',
-          'การคิดเชิงนามธรรม (Abstraction)',
-          'การออกแบบขั้นตอนวิธี (Algorithm Design)',
-        ],
-        correctIndex: 0,
-      },
-      {
-        id: 'q-2',
-        text: 'โปรโตคอลใดทำหน้าที่เข้ารหัสข้อมูลระหว่างเว็บเบราว์เซอร์และเซิร์ฟเวอร์เพื่อความปลอดภัยในการรับส่งข้อมูล?',
-        options: ['HTTP', 'HTTPS', 'FTP', 'SMTP'],
-        correctIndex: 1,
-      },
-      {
-        id: 'q-3',
-        text: 'ข้อใดคือลักษณะของการโจมตีแบบฟิชชิง (Phishing) ที่ควรระมัดระวังมากที่สุด?',
-        options: [
-          'การอัปเดตระบบปฏิบัติการอัตโนมัติจากผู้ผลิต',
-          'การสำรองข้อมูลขึ้นระบบคลาวด์ส่วนตัว',
-          'การส่งอีเมลหรือลิงก์ปลอมแอบอ้างเป็นหน่วยงานเพื่อหลอกขอรหัสผ่าน',
-          'การตั้งค่าการยืนยันตัวตนแบบสองชั้น (2FA)',
-        ],
-        correctIndex: 2,
-      },
-      {
-        id: 'q-4',
-        text: 'ใน Google Sheets หากต้องการหาค่าเฉลี่ยของคะแนนนักเรียนตั้งแต่เซลล์ C2 ถึง C30 ต้องใช้สูตรใด?',
-        options: ['=SUM(C2:C30)', '=COUNT(C2:C30)', '=MAX(C2:C30)', '=AVERAGE(C2:C30)'],
-        correctIndex: 3,
-      },
-      {
-        id: 'q-5',
-        text: 'รหัสผ่านในข้อใดมีความปลอดภัยสูงที่สุดตามหลักความมั่นคงปลอดภัยทางไซเบอร์?',
-        options: ['12345678', 'password2026', 'Tr#9kL!29vQm$4z', '0812345678'],
-        correctIndex: 2,
-      },
-    ],
-  },
-  {
-    id: 'exam-ai-ethics-202',
-    title: 'แบบทดสอบความฉลาดรู้ทางดิจิทัลและจริยธรรมปัญญาประดิษฐ์',
-    description:
-      'วัดความเข้าใจเกี่ยวกับกฎหมายคุ้มครองข้อมูลส่วนบุคคล (PDPA) ลิขสิทธิ์ดิจิทัล และการใช้งานเทคโนโลยีอย่างมีความรับผิดชอบ',
-    passingPercent: 80,
-    publishDate: '2026-10-15',
-    certificatePublishDate: '2026-10-15',
-    certificateTemplate: BLANK_CERT_FRAME_SVG,
-    certificateConfig: { ...DEFAULT_CERT_CONFIG },
-    createdAt: '2026-10-15T09:30:00.000Z',
-    questions: [
-      {
-        id: 'q-201',
-        text: 'ข้อใดจัดเป็น "ข้อมูลส่วนบุคคล" ตามพระราชบัญัติคุ้มครองข้อมูลส่วนบุคคล (PDPA)?',
-        options: [
-          'จำนวนจังหวัดทั้งหมดในประเทศไทย',
-          'ชื่อ-นามสกุล และเลขประจำตัวประชาชนที่ระบุตัวบุคคลได้',
-          'สถิติอุณหภูมิเฉลี่ยรายเดือนของกรมอุตุนิยมวิทยา',
-          'ราคาสินค้าในแคตตาล็อกสาธารณะของร้านค้า',
-        ],
-        correctIndex: 1,
-      },
-      {
-        id: 'q-202',
-        text: 'สัญญาอนุญาต Creative Commons แบบ "CC BY" อนุญาตให้ผู้อื่นนำผลงานไปใช้ได้ภายใต้เงื่อนไขใด?',
-        options: [
-          'ห้ามนำไปดัดแปลงหรือเผยแพร่ในทุกกรณี',
-          'ต้องจ่ายค่าลิขสิทธิ์ก่อนเปิดอ่านทุกครั้ง',
-          'นำไปใช้และเผยแพร่ได้โดยต้องระบุชื่อเจ้าของผลงาน (Attribution)',
-          'ใช้ได้เฉพาะในเครือข่ายอินทราเน็ตภายในองค์กรเท่านั้น',
-        ],
-        correctIndex: 2,
-      },
-      {
-        id: 'q-203',
-        text: 'เมื่อได้รับข่าวสารที่ชวนตื่นตระหนกในสื่อสังคมออนไลน์ แนวปฏิบัติข้อใดถูกต้องที่สุดก่อนกดแชร์?',
-        options: [
-          'รีบส่งต่อให้เพื่อนทันทีเพื่อเตือนภัยให้เร็วที่สุด',
-          'ตรวจสอบแหล่งที่มาที่น่าเชื่อถือและเทียบเคียงข้อมูลจากหลายแหล่ง',
-          'ดูจากยอดกดถูกใจ หากมียอดสูงแสดงว่าเป็นเรื่องจริงเสมอ',
-          'คัดลอกข้อความไปโพสต์ใหม่โดยเป็นชื่อของตนเอง',
-        ],
-        correctIndex: 1,
-      },
-      {
-        id: 'q-204',
-        text: 'การยืนยันตัวตนแบบสองปัจจัย (Two-Factor Authentication: 2FA) ช่วยเพิ่มความปลอดภัยได้อย่างไร?',
-        options: [
-          'ทำให้ไม่ต้องจำรหัสผ่านอีกต่อไป',
-          'ช่วยเพิ่มความเร็วของสัญญาณอินเทอร์เน็ตเป็นสองเท่า',
-          'ต้องใช้ทั้งรหัสผ่านและรหัสยืนยันจากอุปกรณ์อีกชิ้นหนึ่งก่อนเข้าถึงบัญชี',
-          'ลบประวัติการเข้าชมเว็บไซต์โดยอัตโนมัติทุกชั่วโมง',
-        ],
-        correctIndex: 2,
-      },
-      {
-        id: 'q-205',
-        text: 'ร่องรอยทางดิจิทัล (Digital Footprint) หมายถึงข้อใด?',
-        options: [
-          'ข้อมูลและประวัติการกระทำต่าง ๆ ของผู้ใช้ที่ถูกบันทึกไว้บนโลกออนไลน์',
-          'ขนาดความจุของหน่วยความจำหลักในสมาร์ตโฟน',
-          'ความละเอียดของหน้าจอแสดงผลแบบพิกเซล',
-          'หมายเลขรุ่นของการ์ดเครือข่ายไร้สาย',
-        ],
-        correctIndex: 0,
-      },
-    ],
-  },
-];
+const DEFAULT_CERT_CONFIG = {
+  textColor: '#0f172a',
+  nameY: 42,
+  examTitleY: 55,
+  scoreY: 66,
+  dateY: 77,
+  nameSize: 54,
+  examTitleSize: 34,
+  scoreSize: 28,
+  dateSize: 25,
+};
+
+/**
+ * @param {unknown} error
+ * @param {'create' | 'update' | 'delete' | 'list' | 'get' | 'write'} operationType
+ * @param {string | null} docPath
+ */
+function buildFirestoreErrorInfo(error, operationType, docPath) {
+  const errInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    operationType,
+    path: docPath,
+    authInfo: {
+      userId: null,
+      email: null,
+      emailVerified: null,
+      isAnonymous: null,
+      tenantId: null,
+      providerInfo: [],
+    },
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  return errInfo;
+}
+
+export function getBangkokTodayDate() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+/**
+ * @param {unknown} input
+ * @param {string} fallback
+ */
+function normalizeDateString(input, fallback) {
+  if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.trim())) {
+    return input.trim();
+  }
+  if (typeof input === 'string' && input.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(input)) {
+    return input.slice(0, 10);
+  }
+  return fallback;
+}
 
 /**
  * @param {Record<string, any> | undefined} cfg
  */
 function normalizeCertConfig(cfg) {
+  const rawColor =
+    typeof cfg?.textColor === 'string' && cfg.textColor.trim().length >= 4
+      ? cfg.textColor.trim().slice(0, 32)
+      : DEFAULT_CERT_CONFIG.textColor;
+
   return {
-    textColor:
-      typeof cfg?.textColor === 'string' && cfg.textColor
-        ? cfg.textColor
-        : DEFAULT_CERT_CONFIG.textColor,
+    textColor: rawColor,
     nameY:
       typeof cfg?.nameY === 'number'
         ? Math.min(95, Math.max(5, cfg.nameY))
@@ -240,161 +182,102 @@ function normalizeCertConfig(cfg) {
   };
 }
 
-function createDefaultStore() {
+/**
+ * Splits a base64 image string into 3 parts <= 320,000 chars each for Firestore storage.
+ * @param {string} dataUrl
+ */
+function splitTemplateParts(dataUrl) {
+  const clean = String(dataUrl || '');
+  if (clean.length < 20) {
+    throw new Error('ไฟล์รูปภาพเกียรติบัตรไม่ถูกต้อง');
+  }
+  if (clean.length > 960_000) {
+    throw new Error('ขนาดรูปภาพเกียรติบัตรใหญ่เกินกำหนด กรุณาอัปโหลดรูปภาพใหม่อีกครั้ง');
+  }
   return {
-    exams: structuredClone(SEED_EXAMS),
-    submissions: [],
-    settings: {
-      spreadsheetId: '',
-      spreadsheetUrl: '',
-      spreadsheetTitle: '',
-      sheetTabName: '',
-      appsScriptWebhookUrl: process.env.GOOGLE_APPS_SCRIPT_WEBHOOK_URL || '',
-    },
+    part0: clean.slice(0, 320_000),
+    part1: clean.slice(320_000, 640_000),
+    part2: clean.slice(640_000, 960_000),
   };
 }
 
 /**
- * @param {any} parsed
- * @param {string} today
+ * @param {any} db
  */
-function normalizeParsedStore(parsed, today) {
-  if (!parsed || typeof parsed !== 'object') {
-    return createDefaultStore();
-  }
-  if (!Array.isArray(parsed.exams)) {
-    parsed.exams = structuredClone(SEED_EXAMS);
-  } else {
-    parsed.exams = parsed.exams.map((ex) => {
-      const pubDate = normalizeDateString(ex.publishDate, normalizeDateString(ex.createdAt, today));
-      const certPubDate = normalizeDateString(ex.certificatePublishDate, pubDate);
+async function ensureVaultIndex(db) {
+  const vaultPath = `vaults/${VAULT_ID}`;
+  const vaultRef = doc(db, 'vaults', VAULT_ID);
+  try {
+    const snap = await getDoc(vaultRef);
+    if (snap.exists()) {
+      const d = snap.data();
       return {
-        ...ex,
-        publishDate: pubDate,
-        certificatePublishDate: certPubDate,
-        certificateTemplate: ex.certificateTemplate || BLANK_CERT_FRAME_SVG,
-        certificateConfig: normalizeCertConfig(ex.certificateConfig),
+        examIds: Array.isArray(d.examIds) ? d.examIds : [],
+        submissionIds: Array.isArray(d.submissionIds) ? d.submissionIds : [],
+        spreadsheetId: typeof d.spreadsheetId === 'string' ? d.spreadsheetId : '',
+        spreadsheetUrl: typeof d.spreadsheetUrl === 'string' ? d.spreadsheetUrl : '',
+        spreadsheetTitle: typeof d.spreadsheetTitle === 'string' ? d.spreadsheetTitle : '',
+        sheetTabName: typeof d.sheetTabName === 'string' ? d.sheetTabName : '',
+        appsScriptWebhookUrl:
+          typeof d.appsScriptWebhookUrl === 'string' ? d.appsScriptWebhookUrl : '',
       };
-    });
-  }
+    }
 
-  const examMap = new Map(parsed.exams.map((e) => [e.id, e]));
-
-  if (!Array.isArray(parsed.submissions)) {
-    parsed.submissions = [];
-  } else {
-    parsed.submissions = parsed.submissions.map((sub) => {
-      const linkedExam = examMap.get(sub.examId);
-      const fallbackDate = linkedExam
-        ? linkedExam.certificatePublishDate
-        : normalizeDateString(sub.submittedAt, today);
-      return {
-        ...sub,
-        certificatePublishDate: normalizeDateString(sub.certificatePublishDate, fallbackDate),
-        certificateTemplate: sub.certificateTemplate || BLANK_CERT_FRAME_SVG,
-        certificateConfig: normalizeCertConfig(sub.certificateConfig),
-      };
-    });
-  }
-
-  if (!parsed.settings) {
-    parsed.settings = {
+    const initialVault = {
+      examIds: [],
+      submissionIds: [],
       spreadsheetId: '',
       spreadsheetUrl: '',
       spreadsheetTitle: '',
       sheetTabName: '',
-      appsScriptWebhookUrl: process.env.GOOGLE_APPS_SCRIPT_WEBHOOK_URL || '',
+      appsScriptWebhookUrl: (process.env.GOOGLE_APPS_SCRIPT_WEBHOOK_URL || '').slice(0, 600),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
-  }
-  return parsed;
-}
-
-function ensureStore() {
-  const today = getBangkokTodayDate();
-
-  if (IS_SERVERLESS) {
-    try {
-      if (fs.existsSync(TMP_STORE_PATH)) {
-        const rawTmp = fs.readFileSync(TMP_STORE_PATH, 'utf-8');
-        const store = normalizeParsedStore(JSON.parse(rawTmp), today);
-        memoryStoreCache = store;
-        return store;
-      }
-      if (fs.existsSync(REPO_STORE_PATH)) {
-        const rawRepo = fs.readFileSync(REPO_STORE_PATH, 'utf-8');
-        const store = normalizeParsedStore(JSON.parse(rawRepo), today);
-        try {
-          fs.writeFileSync(TMP_STORE_PATH, JSON.stringify(store, null, 2), 'utf-8');
-        } catch {
-          // Ignore write error on read-only tmp edge cases
-        }
-        memoryStoreCache = store;
-        return store;
-      }
-    } catch {
-      if (memoryStoreCache) return memoryStoreCache;
-    }
-
-    if (memoryStoreCache) return memoryStoreCache;
-    const initial = createDefaultStore();
-    try {
-      fs.writeFileSync(TMP_STORE_PATH, JSON.stringify(initial, null, 2), 'utf-8');
-    } catch {
-      // Fallback to memoryStoreCache
-    }
-    memoryStoreCache = initial;
-    return initial;
-  }
-
-  try {
-    if (!fs.existsSync(REPO_DATA_DIR)) {
-      fs.mkdirSync(REPO_DATA_DIR, { recursive: true });
-    }
-    if (!fs.existsSync(REPO_STORE_PATH)) {
-      const initial = createDefaultStore();
-      fs.writeFileSync(REPO_STORE_PATH, JSON.stringify(initial, null, 2), 'utf-8');
-      memoryStoreCache = initial;
-      return initial;
-    }
-    const raw = fs.readFileSync(REPO_STORE_PATH, 'utf-8');
-    const store = normalizeParsedStore(JSON.parse(raw), today);
-    memoryStoreCache = store;
-    return store;
-  } catch {
-    if (memoryStoreCache) return memoryStoreCache;
-    const fallback = createDefaultStore();
-    memoryStoreCache = fallback;
-    return fallback;
+    await setDoc(vaultRef, initialVault);
+    return {
+      examIds: [],
+      submissionIds: [],
+      spreadsheetId: '',
+      spreadsheetUrl: '',
+      spreadsheetTitle: '',
+      sheetTabName: '',
+      appsScriptWebhookUrl: (process.env.GOOGLE_APPS_SCRIPT_WEBHOOK_URL || '').slice(0, 600),
+    };
+  } catch (err) {
+    buildFirestoreErrorInfo(err, 'get', vaultPath);
+    throw err;
   }
 }
 
 /**
- * @param {any} store
+ * @param {any} db
+ * @param {string} templateId
+ * @returns {Promise<string>}
  */
-function saveStore(store) {
-  memoryStoreCache = store;
-  const serialized = JSON.stringify(store, null, 2);
+async function loadTemplateDataUrl(db, templateId) {
+  if (!templateId) return BLANK_CERT_FRAME_SVG;
+  const cached = templateMemoryCache.get(templateId);
+  if (cached) return cached;
 
-  if (IS_SERVERLESS) {
-    try {
-      fs.writeFileSync(TMP_STORE_PATH, serialized, 'utf-8');
-    } catch {
-      // Keep memoryStoreCache updated
-    }
-    return;
-  }
-
+  const tplPath = `vaults/${VAULT_ID}/templates/${templateId}`;
   try {
-    if (!fs.existsSync(REPO_DATA_DIR)) {
-      fs.mkdirSync(REPO_DATA_DIR, { recursive: true });
+    const snap = await getDoc(doc(db, 'vaults', VAULT_ID, 'templates', templateId));
+    if (!snap.exists()) return BLANK_CERT_FRAME_SVG;
+    const d = snap.data();
+    const combined = `${d.part0 || ''}${d.part1 || ''}${d.part2 || ''}`;
+    if (combined) {
+      if (templateMemoryCache.size > 60) {
+        const firstKey = templateMemoryCache.keys().next().value;
+        if (firstKey) templateMemoryCache.delete(firstKey);
+      }
+      templateMemoryCache.set(templateId, combined);
+      return combined;
     }
-    fs.writeFileSync(REPO_STORE_PATH, serialized, 'utf-8');
-  } catch {
-    try {
-      fs.writeFileSync(TMP_STORE_PATH, serialized, 'utf-8');
-    } catch {
-      // Keep memoryStoreCache updated
-    }
+    return BLANK_CERT_FRAME_SVG;
+  } catch (err) {
+    buildFirestoreErrorInfo(err, 'get', tplPath);
+    return BLANK_CERT_FRAME_SVG;
   }
 }
 
@@ -431,7 +314,11 @@ export function createApiRouter() {
   const router = express.Router();
 
   router.get('/health', (_req, res) => {
-    res.json({ ok: true, serverless: IS_SERVERLESS });
+    res.json({
+      ok: true,
+      storage: 'cloud-firestore',
+      projectId: firebaseConfig.projectId,
+    });
   });
 
   // Admin Login (00000 / 00000)
@@ -444,401 +331,925 @@ export function createApiRouter() {
     res.status(401).json({ ok: false, error: 'รหัสผู้ดูแลระบบไม่ถูกต้อง' });
   });
 
-  // List Exam Sets
-  router.get('/exams', (req, res) => {
-    const store = ensureStore();
-    const isAdmin = isAdminAuthorized(req);
-    const today = getBangkokTodayDate();
+  // List Exam Sets from Cloud Firestore
+  router.get('/exams', async (req, res) => {
+    try {
+      const db = getServerDb();
+      const vault = await ensureVaultIndex(db);
+      const isAdmin = isAdminAuthorized(req);
+      const today = getBangkokTodayDate();
 
-    const exams = store.exams.map((exam) => {
-      const isPublished = exam.publishDate <= today;
-      return {
-        id: exam.id,
-        title: exam.title,
-        description: exam.description,
-        passingPercent: exam.passingPercent,
-        publishDate: exam.publishDate,
-        certificatePublishDate: exam.certificatePublishDate,
-        isPublished,
-        certificateTemplate: exam.certificateTemplate,
-        certificateConfig: exam.certificateConfig,
-        createdAt: exam.createdAt,
-        questionCount: exam.questions.length,
-        questions:
-          isAdmin || isPublished
-            ? exam.questions.map((q) => ({
-                id: q.id,
-                text: q.text,
-                options: q.options,
-                ...(isAdmin ? { correctIndex: q.correctIndex } : {}),
-              }))
-            : [],
-      };
-    });
+      if (vault.examIds.length === 0) {
+        res.json({ exams: [], serverToday: today });
+        return;
+      }
 
-    res.json({ exams, serverToday: today });
+      const snaps = await Promise.all(
+        vault.examIds.map((id) =>
+          getDoc(doc(db, 'vaults', VAULT_ID, 'exams', id)).catch((err) => {
+            buildFirestoreErrorInfo(err, 'get', `vaults/${VAULT_ID}/exams/${id}`);
+            throw err;
+          })
+        )
+      );
+
+      const rawExams = snaps.filter((s) => s.exists()).map((s) => s.data());
+      const uniqueTemplateIds = Array.from(
+        new Set(rawExams.map((e) => e.templateId).filter(Boolean))
+      );
+      const templateEntries = await Promise.all(
+        uniqueTemplateIds.map(async (tid) => [tid, await loadTemplateDataUrl(db, tid)])
+      );
+      const templateMap = new Map(templateEntries);
+
+      const exams = rawExams.map((exam) => {
+        const isPublished = exam.publishDate <= today;
+        const questionsList = Array.isArray(exam.questions) ? exam.questions : [];
+        return {
+          id: exam.id,
+          title: exam.title,
+          description: exam.description,
+          passingPercent: exam.passingPercent,
+          publishDate: exam.publishDate,
+          certificatePublishDate: exam.certificatePublishDate,
+          isPublished,
+          certificateTemplate: templateMap.get(exam.templateId) || BLANK_CERT_FRAME_SVG,
+          certificateConfig: normalizeCertConfig(exam.certificateConfig),
+          createdAt: exam.createdAtIso || new Date().toISOString(),
+          questionCount: questionsList.length,
+          questions:
+            isAdmin || isPublished
+              ? questionsList.map((q) => ({
+                  id: q.id,
+                  text: q.text,
+                  options: q.options,
+                  ...(isAdmin ? { correctIndex: q.correctIndex } : {}),
+                }))
+              : [],
+        };
+      });
+
+      res.json({ exams, serverToday: today });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'ไม่สามารถดึงข้อมูลชุดข้อสอบจากฐานข้อมูลได้',
+      });
+    }
   });
 
-  // Create New Exam Set with Scheduled Publish Date & Certificate Publish Date (Admin Only)
-  router.post('/exams', (req, res) => {
+  // Create New Exam Set permanently in Cloud Firestore (Admin Only)
+  router.post('/exams', async (req, res) => {
     if (!isAdminAuthorized(req)) {
       res.status(403).json({ error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
       return;
     }
 
-    const {
-      title,
-      description,
-      publishDate,
-      certificatePublishDate,
-      certificateTemplate,
-      certificateConfig,
-      questions,
-    } = req.body || {};
+    try {
+      const {
+        title,
+        description,
+        publishDate,
+        certificatePublishDate,
+        certificateTemplate,
+        certificateConfig,
+        questions,
+      } = req.body || {};
 
-    if (!title?.trim()) {
-      res.status(400).json({ error: 'กรุณาระบุชื่อชุดข้อสอบ' });
+      const cleanTitle = String(title || '').trim().slice(0, 300);
+      if (!cleanTitle) {
+        res.status(400).json({ error: 'กรุณาระบุชื่อชุดข้อสอบ' });
+        return;
+      }
+
+      if (!certificateTemplate || !String(certificateTemplate).startsWith('data:image/')) {
+        res
+          .status(400)
+          .json({ error: 'กรุณาอัปโหลดไฟล์รูปภาพรูปแบบเกียรติบัตรสำหรับชุดข้อสอบนี้' });
+        return;
+      }
+
+      if (!Array.isArray(questions) || questions.length === 0) {
+        res.status(400).json({ error: 'กรุณาเพิ่มคำถามอย่างน้อย 1 ข้อ' });
+        return;
+      }
+      if (questions.length > 200) {
+        res.status(400).json({ error: 'รองรับคำถามสูงสุดไม่เกิน 200 ข้อต่อชุด' });
+        return;
+      }
+
+      for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
+        if (
+          !q.text?.trim() ||
+          !Array.isArray(q.options) ||
+          q.options.length !== 4 ||
+          q.options.some((opt) => !String(opt).trim()) ||
+          typeof q.correctIndex !== 'number' ||
+          q.correctIndex < 0 ||
+          q.correctIndex > 3
+        ) {
+          res.status(400).json({
+            error: `ข้อมูลคำถามข้อที่ ${i + 1} ไม่ครบถ้วน กรุณากรอกตัวเลือก ก-ง และระบุข้อที่ถูก`,
+          });
+          return;
+        }
+      }
+
+      const tplParts = splitTemplateParts(String(certificateTemplate));
+      const today = getBangkokTodayDate();
+      const resolvedPublishDate = normalizeDateString(publishDate, today);
+      const resolvedCertDate = normalizeDateString(certificatePublishDate, resolvedPublishDate);
+
+      const db = getServerDb();
+      const vault = await ensureVaultIndex(db);
+
+      const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const examId = `exam-${suffix}`;
+      const templateId = `tpl-${suffix}`;
+      const createdAtIso = new Date().toISOString();
+      const cleanDescription = String(
+        description || 'แบบทดสอบออนไลน์ประเมินความรู้ เกณฑ์ผ่านร้อยละ 80 ขึ้นไป'
+      )
+        .trim()
+        .slice(0, 1000);
+      const normalizedConfig = normalizeCertConfig(certificateConfig);
+      const normalizedQuestions = questions.map((q, idx) => ({
+        id: `q-${Date.now().toString(36)}-${idx + 1}`,
+        text: String(q.text).trim().slice(0, 1000),
+        options: [
+          String(q.options[0]).trim().slice(0, 500),
+          String(q.options[1]).trim().slice(0, 500),
+          String(q.options[2]).trim().slice(0, 500),
+          String(q.options[3]).trim().slice(0, 500),
+        ],
+        correctIndex: q.correctIndex,
+      }));
+
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'vaults', VAULT_ID, 'templates', templateId), {
+        id: templateId,
+        part0: tplParts.part0,
+        part1: tplParts.part1,
+        part2: tplParts.part2,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      batch.set(doc(db, 'vaults', VAULT_ID, 'exams', examId), {
+        id: examId,
+        title: cleanTitle,
+        description: cleanDescription,
+        passingPercent: 80,
+        publishDate: resolvedPublishDate,
+        certificatePublishDate: resolvedCertDate,
+        templateId,
+        certificateConfig: normalizedConfig,
+        questions: normalizedQuestions,
+        createdAtIso,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      batch.update(doc(db, 'vaults', VAULT_ID), {
+        examIds: [examId, ...vault.examIds].slice(0, 500),
+        updatedAt: serverTimestamp(),
+      });
+
+      try {
+        await batch.commit();
+      } catch (err) {
+        buildFirestoreErrorInfo(err, 'write', `vaults/${VAULT_ID}/exams/${examId}`);
+        throw err;
+      }
+
+      templateMemoryCache.set(templateId, String(certificateTemplate));
+
+      res.status(201).json({
+        exam: {
+          id: examId,
+          title: cleanTitle,
+          description: cleanDescription,
+          passingPercent: 80,
+          publishDate: resolvedPublishDate,
+          certificatePublishDate: resolvedCertDate,
+          isPublished: resolvedPublishDate <= today,
+          certificateTemplate: String(certificateTemplate),
+          certificateConfig: normalizedConfig,
+          createdAt: createdAtIso,
+          questionCount: normalizedQuestions.length,
+          questions: normalizedQuestions,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'บันทึกชุดข้อสอบไม่สำเร็จ',
+      });
+    }
+  });
+
+  // Update Full Exam Set & Certificate in Cloud Firestore (Admin Only)
+  router.put('/exams/:id', async (req, res) => {
+    if (!isAdminAuthorized(req)) {
+      res.status(403).json({ error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
       return;
     }
 
-    if (!certificateTemplate || !String(certificateTemplate).startsWith('data:image/')) {
-      res
-        .status(400)
-        .json({ error: 'กรุณาอัปโหลดไฟล์รูปภาพรูปแบบเกียรติบัตรสำหรับชุดข้อสอบนี้' });
-      return;
-    }
+    try {
+      const examId = req.params.id;
+      const {
+        title,
+        description,
+        publishDate,
+        certificatePublishDate,
+        certificateTemplate,
+        certificateConfig,
+        questions,
+      } = req.body || {};
 
-    if (!Array.isArray(questions) || questions.length === 0) {
-      res.status(400).json({ error: 'กรุณาเพิ่มคำถามอย่างน้อย 1 ข้อ' });
-      return;
-    }
+      const cleanTitle = String(title || '').trim().slice(0, 300);
+      if (!cleanTitle) {
+        res.status(400).json({ error: 'กรุณาระบุชื่อชุดข้อสอบ' });
+        return;
+      }
 
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
+      if (!Array.isArray(questions) || questions.length === 0) {
+        res.status(400).json({ error: 'กรุณาเพิ่มคำถามอย่างน้อย 1 ข้อ' });
+        return;
+      }
+      if (questions.length > 200) {
+        res.status(400).json({ error: 'รองรับคำถามสูงสุดไม่เกิน 200 ข้อต่อชุด' });
+        return;
+      }
+
+      for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
+        if (
+          !q.text?.trim() ||
+          !Array.isArray(q.options) ||
+          q.options.length !== 4 ||
+          q.options.some((opt) => !String(opt).trim()) ||
+          typeof q.correctIndex !== 'number' ||
+          q.correctIndex < 0 ||
+          q.correctIndex > 3
+        ) {
+          res.status(400).json({
+            error: `ข้อมูลคำถามข้อที่ ${i + 1} ไม่ครบถ้วน กรุณากรอกตัวเลือก ก-ง และระบุข้อที่ถูก`,
+          });
+          return;
+        }
+      }
+
+      const db = getServerDb();
+      const vault = await ensureVaultIndex(db);
+      const examRef = doc(db, 'vaults', VAULT_ID, 'exams', examId);
+      const examSnap = await getDoc(examRef);
+
+      if (!examSnap.exists()) {
+        res.status(404).json({ error: 'ไม่พบชุดข้อสอบที่ต้องการแก้ไข' });
+        return;
+      }
+
+      const exam = examSnap.data();
+      const today = getBangkokTodayDate();
+      const nextPublishDate = normalizeDateString(publishDate, exam.publishDate);
+      const nextCertPublishDate = normalizeDateString(
+        certificatePublishDate,
+        exam.certificatePublishDate || nextPublishDate
+      );
+      const cleanDescription = String(
+        description ?? exam.description ?? 'แบบทดสอบออนไลน์ประเมินความรู้ เกณฑ์ผ่านร้อยละ 80 ขึ้นไป'
+      )
+        .trim()
+        .slice(0, 1000);
+      const nextCertConfig = certificateConfig
+        ? normalizeCertConfig({ ...exam.certificateConfig, ...certificateConfig })
+        : normalizeCertConfig(exam.certificateConfig);
+
+      const normalizedQuestions = questions.map((q, idx) => ({
+        id:
+          typeof q.id === 'string' && q.id.trim().length >= 3
+            ? q.id.trim().slice(0, 64)
+            : `q-${Date.now().toString(36)}-${idx + 1}`,
+        text: String(q.text).trim().slice(0, 1000),
+        options: [
+          String(q.options[0]).trim().slice(0, 500),
+          String(q.options[1]).trim().slice(0, 500),
+          String(q.options[2]).trim().slice(0, 500),
+          String(q.options[3]).trim().slice(0, 500),
+        ],
+        correctIndex: q.correctIndex,
+      }));
+
+      let nextTemplateId = exam.templateId;
+      let resolvedTemplateUrl = await loadTemplateDataUrl(db, exam.templateId);
+
       if (
-        !q.text?.trim() ||
-        !Array.isArray(q.options) ||
-        q.options.length !== 4 ||
-        q.options.some((opt) => !String(opt).trim()) ||
-        typeof q.correctIndex !== 'number' ||
-        q.correctIndex < 0 ||
-        q.correctIndex > 3
+        certificateTemplate &&
+        String(certificateTemplate).startsWith('data:image/') &&
+        String(certificateTemplate) !== resolvedTemplateUrl
       ) {
-        res.status(400).json({
-          error: `ข้อมูลคำถามข้อที่ ${i + 1} ไม่ครบถ้วน กรุณากรอกตัวเลือก ก-ง และระบุข้อที่ถูก`,
+        const tplParts = splitTemplateParts(String(certificateTemplate));
+        nextTemplateId = `tpl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        await setDoc(doc(db, 'vaults', VAULT_ID, 'templates', nextTemplateId), {
+          id: nextTemplateId,
+          part0: tplParts.part0,
+          part1: tplParts.part1,
+          part2: tplParts.part2,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        resolvedTemplateUrl = String(certificateTemplate);
+        templateMemoryCache.set(nextTemplateId, resolvedTemplateUrl);
+      }
+
+      try {
+        await updateDoc(examRef, {
+          title: cleanTitle,
+          description: cleanDescription,
+          questions: normalizedQuestions,
+          publishDate: nextPublishDate,
+          certificatePublishDate: nextCertPublishDate,
+          templateId: nextTemplateId,
+          certificateConfig: nextCertConfig,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (err) {
+        buildFirestoreErrorInfo(err, 'update', `vaults/${VAULT_ID}/exams/${examId}`);
+        throw err;
+      }
+
+      if (vault.submissionIds.length > 0) {
+        const subSnaps = await Promise.all(
+          vault.submissionIds.map((sid) =>
+            getDoc(doc(db, 'vaults', VAULT_ID, 'submissions', sid))
+          )
+        );
+        const matchingSubs = subSnaps.filter(
+          (s) => s.exists() && s.data().examId === examId
+        );
+        await Promise.all(
+          matchingSubs.map((s) =>
+            updateDoc(doc(db, 'vaults', VAULT_ID, 'submissions', s.id), {
+              examTitle: cleanTitle,
+              certificatePublishDate: nextCertPublishDate,
+              templateId: nextTemplateId,
+              certificateConfig: nextCertConfig,
+              updatedAt: serverTimestamp(),
+            })
+          )
+        );
+      }
+
+      res.json({
+        ok: true,
+        exam: {
+          id: examId,
+          title: cleanTitle,
+          description: cleanDescription,
+          passingPercent: exam.passingPercent || 80,
+          publishDate: nextPublishDate,
+          certificatePublishDate: nextCertPublishDate,
+          isPublished: nextPublishDate <= today,
+          certificateTemplate: resolvedTemplateUrl,
+          certificateConfig: nextCertConfig,
+          createdAt: exam.createdAtIso,
+          questionCount: normalizedQuestions.length,
+          questions: normalizedQuestions,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'แก้ไขชุดข้อสอบไม่สำเร็จ',
+      });
+    }
+  });
+
+  // Update Schedule & Certificate Settings of Existing Exam in Cloud Firestore (Admin Only)
+  router.put('/exams/:id/certificate', async (req, res) => {
+    if (!isAdminAuthorized(req)) {
+      res.status(403).json({ error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+      return;
+    }
+
+    try {
+      const examId = req.params.id;
+      const { publishDate, certificatePublishDate, certificateTemplate, certificateConfig } =
+        req.body || {};
+
+      const db = getServerDb();
+      const vault = await ensureVaultIndex(db);
+      const examRef = doc(db, 'vaults', VAULT_ID, 'exams', examId);
+      const examSnap = await getDoc(examRef);
+
+      if (!examSnap.exists()) {
+        res.status(404).json({ error: 'ไม่พบชุดข้อสอบ' });
+        return;
+      }
+
+      const exam = examSnap.data();
+      const nextPublishDate = publishDate
+        ? normalizeDateString(publishDate, exam.publishDate)
+        : exam.publishDate;
+      const nextCertPublishDate = certificatePublishDate
+        ? normalizeDateString(certificatePublishDate, exam.certificatePublishDate)
+        : exam.certificatePublishDate;
+      const nextCertConfig = certificateConfig
+        ? normalizeCertConfig({ ...exam.certificateConfig, ...certificateConfig })
+        : normalizeCertConfig(exam.certificateConfig);
+
+      let nextTemplateId = exam.templateId;
+      let resolvedTemplateUrl = await loadTemplateDataUrl(db, exam.templateId);
+
+      if (
+        certificateTemplate &&
+        String(certificateTemplate).startsWith('data:image/') &&
+        String(certificateTemplate) !== resolvedTemplateUrl
+      ) {
+        const tplParts = splitTemplateParts(String(certificateTemplate));
+        nextTemplateId = `tpl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        await setDoc(doc(db, 'vaults', VAULT_ID, 'templates', nextTemplateId), {
+          id: nextTemplateId,
+          part0: tplParts.part0,
+          part1: tplParts.part1,
+          part2: tplParts.part2,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        resolvedTemplateUrl = String(certificateTemplate);
+        templateMemoryCache.set(nextTemplateId, resolvedTemplateUrl);
+      }
+
+      try {
+        await updateDoc(examRef, {
+          publishDate: nextPublishDate,
+          certificatePublishDate: nextCertPublishDate,
+          templateId: nextTemplateId,
+          certificateConfig: nextCertConfig,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (err) {
+        buildFirestoreErrorInfo(err, 'update', `vaults/${VAULT_ID}/exams/${examId}`);
+        throw err;
+      }
+
+      // Propagate updated certificate settings to existing submissions for this exam
+      if (vault.submissionIds.length > 0) {
+        const subSnaps = await Promise.all(
+          vault.submissionIds.map((sid) =>
+            getDoc(doc(db, 'vaults', VAULT_ID, 'submissions', sid))
+          )
+        );
+        const matchingSubs = subSnaps.filter(
+          (s) => s.exists() && s.data().examId === examId
+        );
+        await Promise.all(
+          matchingSubs.map((s) =>
+            updateDoc(doc(db, 'vaults', VAULT_ID, 'submissions', s.id), {
+              certificatePublishDate: nextCertPublishDate,
+              templateId: nextTemplateId,
+              certificateConfig: nextCertConfig,
+              updatedAt: serverTimestamp(),
+            })
+          )
+        );
+      }
+
+      res.json({
+        ok: true,
+        exam: {
+          ...exam,
+          publishDate: nextPublishDate,
+          certificatePublishDate: nextCertPublishDate,
+          certificateTemplate: resolvedTemplateUrl,
+          certificateConfig: nextCertConfig,
+          createdAt: exam.createdAtIso,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'อัปเดตข้อมูลเกียรติบัตรไม่สำเร็จ',
+      });
+    }
+  });
+
+  // Delete Exam Set from Cloud Firestore (Admin Only)
+  router.delete('/exams/:id', async (req, res) => {
+    if (!isAdminAuthorized(req)) {
+      res.status(403).json({ error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+      return;
+    }
+
+    try {
+      const examId = req.params.id;
+      const db = getServerDb();
+      const vault = await ensureVaultIndex(db);
+      const examRef = doc(db, 'vaults', VAULT_ID, 'exams', examId);
+      const examSnap = await getDoc(examRef);
+
+      if (!examSnap.exists() && !vault.examIds.includes(examId)) {
+        res.status(404).json({ error: 'ไม่พบชุดข้อสอบ' });
+        return;
+      }
+
+      const batch = writeBatch(db);
+      if (examSnap.exists()) {
+        batch.delete(examRef);
+      }
+      batch.update(doc(db, 'vaults', VAULT_ID), {
+        examIds: vault.examIds.filter((id) => id !== examId),
+        updatedAt: serverTimestamp(),
+      });
+
+      try {
+        await batch.commit();
+      } catch (err) {
+        buildFirestoreErrorInfo(err, 'delete', `vaults/${VAULT_ID}/exams/${examId}`);
+        throw err;
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'ลบชุดข้อสอบไม่สำเร็จ',
+      });
+    }
+  });
+
+  // Submit Exam Answers & Persist Submission in Cloud Firestore
+  router.post('/submissions', async (req, res) => {
+    try {
+      const { examId, studentName, studentCode, answers } = req.body || {};
+
+      const cleanName = String(studentName || '').trim().slice(0, 200);
+      const cleanCode = String(studentCode || '').trim();
+
+      if (!cleanName) {
+        res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุลของนักเรียน' });
+        return;
+      }
+      if (!/^\d{5}$/.test(cleanCode)) {
+        res.status(400).json({ error: 'เลขประจำตัวนักเรียนต้องเป็นตัวเลข 5 หลักเท่านั้น' });
+        return;
+      }
+      if (!examId || typeof examId !== 'string') {
+        res.status(400).json({ error: 'ไม่พบชุดข้อสอบที่เลือก' });
+        return;
+      }
+
+      const db = getServerDb();
+      const vault = await ensureVaultIndex(db);
+      const examSnap = await getDoc(doc(db, 'vaults', VAULT_ID, 'exams', examId));
+      if (!examSnap.exists()) {
+        res.status(404).json({ error: 'ไม่พบชุดข้อสอบที่เลือก' });
+        return;
+      }
+
+      const exam = examSnap.data();
+      const today = getBangkokTodayDate();
+      if (exam.publishDate > today) {
+        res.status(403).json({
+          error: `ชุดข้อสอบนี้ยังไม่ได้เปิดให้เข้าสอบ (กำหนดเผยแพร่วันที่ ${exam.publishDate})`,
         });
         return;
       }
-    }
 
-    const today = getBangkokTodayDate();
-    const resolvedPublishDate = normalizeDateString(publishDate, today);
-    const resolvedCertDate = normalizeDateString(certificatePublishDate, resolvedPublishDate);
-
-    const store = ensureStore();
-    const newExam = {
-      id: `exam-${Date.now().toString(36)}`,
-      title: String(title).trim(),
-      description: String(
-        description || 'แบบทดสอบออนไลน์ประเมินความรู้ เกณฑ์ผ่านร้อยละ 80 ขึ้นไป'
-      ).trim(),
-      passingPercent: 80,
-      publishDate: resolvedPublishDate,
-      certificatePublishDate: resolvedCertDate,
-      certificateTemplate,
-      certificateConfig: normalizeCertConfig(certificateConfig),
-      createdAt: new Date().toISOString(),
-      questions: questions.map((q, idx) => ({
-        id: `q-${Date.now().toString(36)}-${idx + 1}`,
-        text: String(q.text).trim(),
-        options: [
-          String(q.options[0]).trim(),
-          String(q.options[1]).trim(),
-          String(q.options[2]).trim(),
-          String(q.options[3]).trim(),
-        ],
-        correctIndex: q.correctIndex,
-      })),
-    };
-
-    store.exams.unshift(newExam);
-    saveStore(store);
-
-    res.status(201).json({
-      exam: {
-        ...newExam,
-        isPublished: newExam.publishDate <= today,
-        questionCount: newExam.questions.length,
-      },
-    });
-  });
-
-  // Update Schedule & Certificate Settings of Existing Exam (Admin Only)
-  router.put('/exams/:id/certificate', (req, res) => {
-    if (!isAdminAuthorized(req)) {
-      res.status(403).json({ error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
-      return;
-    }
-    const { publishDate, certificatePublishDate, certificateTemplate, certificateConfig } =
-      req.body || {};
-
-    const store = ensureStore();
-    const exam = store.exams.find((e) => e.id === req.params.id);
-    if (!exam) {
-      res.status(404).json({ error: 'ไม่พบชุดข้อสอบ' });
-      return;
-    }
-
-    if (publishDate) {
-      exam.publishDate = normalizeDateString(publishDate, exam.publishDate);
-    }
-    if (certificatePublishDate) {
-      exam.certificatePublishDate = normalizeDateString(
-        certificatePublishDate,
-        exam.certificatePublishDate
-      );
-    }
-    if (certificateTemplate && String(certificateTemplate).startsWith('data:image/')) {
-      exam.certificateTemplate = certificateTemplate;
-    }
-    if (certificateConfig) {
-      exam.certificateConfig = normalizeCertConfig({
-        ...exam.certificateConfig,
-        ...certificateConfig,
-      });
-    }
-
-    for (const sub of store.submissions) {
-      if (sub.examId === exam.id) {
-        sub.certificatePublishDate = exam.certificatePublishDate;
-        sub.certificateTemplate = exam.certificateTemplate;
-        sub.certificateConfig = exam.certificateConfig;
+      const questionsList = Array.isArray(exam.questions) ? exam.questions : [];
+      let score = 0;
+      const answerMap = answers || {};
+      for (const q of questionsList) {
+        if (typeof answerMap[q.id] === 'number' && answerMap[q.id] === q.correctIndex) {
+          score += 1;
+        }
       }
-    }
 
-    saveStore(store);
-    res.json({ ok: true, exam });
-  });
+      const totalQuestions = questionsList.length;
+      const percentage = totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0;
+      const passed = percentage >= 80;
+      const submittedAt = new Date().toISOString();
+      const randomSuffix = Math.floor(100000 + Math.random() * 900000).toString();
+      const certificateNo = passed ? `CERT-${new Date().getFullYear()}-${randomSuffix}` : '';
 
-  // Delete Exam Set (Admin Only)
-  router.delete('/exams/:id', (req, res) => {
-    if (!isAdminAuthorized(req)) {
-      res.status(403).json({ error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
-      return;
-    }
-    const store = ensureStore();
-    const before = store.exams.length;
-    store.exams = store.exams.filter((e) => e.id !== req.params.id);
-    if (store.exams.length === before) {
-      res.status(404).json({ error: 'ไม่พบชุดข้อสอบ' });
-      return;
-    }
-    saveStore(store);
-    res.json({ ok: true });
-  });
-
-  // Submit Exam Answers & Grade Automatically (>= 80% Pass)
-  router.post('/submissions', async (req, res) => {
-    const { examId, studentName, studentCode, answers } = req.body || {};
-
-    const cleanName = String(studentName || '').trim();
-    const cleanCode = String(studentCode || '').trim();
-
-    if (!cleanName) {
-      res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุลของนักเรียน' });
-      return;
-    }
-    if (!/^\d{5}$/.test(cleanCode)) {
-      res.status(400).json({ error: 'เลขประจำตัวนักเรียนต้องเป็นตัวเลข 5 หลักเท่านั้น' });
-      return;
-    }
-
-    const store = ensureStore();
-    const exam = store.exams.find((e) => e.id === examId);
-    if (!exam) {
-      res.status(404).json({ error: 'ไม่พบชุดข้อสอบที่เลือก' });
-      return;
-    }
-
-    const today = getBangkokTodayDate();
-    if (exam.publishDate > today) {
-      res.status(403).json({
-        error: `ชุดข้อสอบนี้ยังไม่ได้เปิดให้เข้าสอบ (กำหนดเผยแพร่วันที่ ${exam.publishDate})`,
-      });
-      return;
-    }
-
-    let score = 0;
-    const answerMap = answers || {};
-    for (const q of exam.questions) {
-      if (typeof answerMap[q.id] === 'number' && answerMap[q.id] === q.correctIndex) {
-        score += 1;
+      let webhookSynced = false;
+      if (vault.appsScriptWebhookUrl) {
+        webhookSynced = await forwardToAppsScript(vault.appsScriptWebhookUrl, {
+          submittedAt,
+          studentCode: cleanCode,
+          studentName: cleanName,
+          examTitle: exam.title,
+          score: `${score}/${totalQuestions}`,
+          percentage,
+          status: passed ? 'ผ่าน' : 'ไม่ผ่าน',
+          certificateNo: certificateNo || '-',
+        });
       }
-    }
 
-    const totalQuestions = exam.questions.length;
-    const percentage = totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0;
-    const passed = percentage >= 80;
-    const submittedAt = new Date().toISOString();
-    const randomSuffix = Math.floor(100000 + Math.random() * 900000).toString();
-    const certificateNo = passed ? `CERT-${new Date().getFullYear()}-${randomSuffix}` : null;
+      const submissionId = `sub-${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 6)}`;
+      const normalizedConfig = normalizeCertConfig(exam.certificateConfig);
 
-    let webhookSynced = false;
-    if (store.settings.appsScriptWebhookUrl) {
-      webhookSynced = await forwardToAppsScript(store.settings.appsScriptWebhookUrl, {
-        submittedAt,
-        studentCode: cleanCode,
+      const submissionDoc = {
+        id: submissionId,
+        examId: exam.id,
+        examTitle: String(exam.title).slice(0, 300),
+        certificatePublishDate: exam.certificatePublishDate,
+        templateId: exam.templateId,
+        certificateConfig: normalizedConfig,
         studentName: cleanName,
-        examTitle: exam.title,
-        score: `${score}/${totalQuestions}`,
+        studentCode: cleanCode,
+        score,
+        totalQuestions,
         percentage,
-        status: passed ? 'ผ่าน' : 'ไม่ผ่าน',
-        certificateNo: certificateNo || '-',
+        passed,
+        statusText: passed ? 'ผ่าน' : 'ไม่ผ่าน',
+        certificateNo,
+        submittedAt,
+        sheetSynced: false,
+        webhookSynced,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'vaults', VAULT_ID, 'submissions', submissionId), submissionDoc);
+      batch.update(doc(db, 'vaults', VAULT_ID), {
+        submissionIds: [submissionId, ...vault.submissionIds].slice(0, 5000),
+        updatedAt: serverTimestamp(),
+      });
+
+      try {
+        await batch.commit();
+      } catch (err) {
+        buildFirestoreErrorInfo(err, 'create', `vaults/${VAULT_ID}/submissions/${submissionId}`);
+        throw err;
+      }
+
+      const certificateTemplate = await loadTemplateDataUrl(db, exam.templateId);
+
+      res.status(201).json({
+        submission: {
+          id: submissionId,
+          examId: exam.id,
+          examTitle: exam.title,
+          certificatePublishDate: exam.certificatePublishDate,
+          certificateTemplate,
+          certificateConfig: normalizedConfig,
+          studentName: cleanName,
+          studentCode: cleanCode,
+          score,
+          totalQuestions,
+          percentage,
+          passed,
+          statusText: passed ? 'ผ่าน' : 'ไม่ผ่าน',
+          certificateNo: certificateNo || null,
+          submittedAt,
+          sheetSynced: false,
+          webhookSynced,
+        },
+        settings: {
+          spreadsheetId: vault.spreadsheetId,
+          sheetTabName: vault.sheetTabName,
+          spreadsheetUrl: vault.spreadsheetUrl,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'ไม่สามารถบันทึกผลการสอบได้',
       });
     }
-
-    const submission = {
-      id: `sub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      examId: exam.id,
-      examTitle: exam.title,
-      certificatePublishDate: exam.certificatePublishDate,
-      certificateTemplate: exam.certificateTemplate,
-      certificateConfig: exam.certificateConfig,
-      studentName: cleanName,
-      studentCode: cleanCode,
-      score,
-      totalQuestions,
-      percentage,
-      passed,
-      statusText: passed ? 'ผ่าน' : 'ไม่ผ่าน',
-      certificateNo,
-      submittedAt,
-      sheetSynced: false,
-      webhookSynced,
-    };
-
-    store.submissions.unshift(submission);
-    saveStore(store);
-
-    res.status(201).json({
-      submission,
-      settings: {
-        spreadsheetId: store.settings.spreadsheetId,
-        sheetTabName: store.settings.sheetTabName,
-        spreadsheetUrl: store.settings.spreadsheetUrl,
-      },
-    });
   });
 
   // Update Student Name during Certificate Pre-Download Verification
-  router.patch('/submissions/:id/student-name', (req, res) => {
-    const { studentName, studentCode } = req.body || {};
-    const cleanName = String(studentName || '').trim();
-    if (!cleanName) {
-      res.status(400).json({ error: 'กรุณาระบุชื่อ-นามสกุลให้ถูกต้อง' });
-      return;
-    }
+  router.patch('/submissions/:id/student-name', async (req, res) => {
+    try {
+      const submissionId = req.params.id;
+      const { studentName, studentCode } = req.body || {};
+      const cleanName = String(studentName || '').trim().slice(0, 200);
+      if (!cleanName) {
+        res.status(400).json({ error: 'กรุณาระบุชื่อ-นามสกุลให้ถูกต้อง' });
+        return;
+      }
 
-    const store = ensureStore();
-    const sub = store.submissions.find((s) => s.id === req.params.id);
-    if (!sub) {
-      res.status(404).json({ error: 'ไม่พบข้อมูลการสอบ' });
-      return;
-    }
+      const db = getServerDb();
+      const subRef = doc(db, 'vaults', VAULT_ID, 'submissions', submissionId);
+      const subSnap = await getDoc(subRef);
+      if (!subSnap.exists()) {
+        res.status(404).json({ error: 'ไม่พบข้อมูลการสอบ' });
+        return;
+      }
 
-    const isAdmin = isAdminAuthorized(req);
-    if (!isAdmin && sub.studentCode !== String(studentCode || '').trim()) {
-      res.status(403).json({ error: 'ไม่มีสิทธิ์แก้ไขข้อมูลรายการนี้' });
-      return;
-    }
+      const sub = subSnap.data();
+      const isAdmin = isAdminAuthorized(req);
+      if (!isAdmin && sub.studentCode !== String(studentCode || '').trim()) {
+        res.status(403).json({ error: 'ไม่มีสิทธิ์แก้ไขข้อมูลรายการนี้' });
+        return;
+      }
 
-    sub.studentName = cleanName;
-    saveStore(store);
-    res.json({ ok: true, submission: sub });
+      try {
+        await updateDoc(subRef, {
+          studentName: cleanName,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (err) {
+        buildFirestoreErrorInfo(err, 'update', `vaults/${VAULT_ID}/submissions/${submissionId}`);
+        throw err;
+      }
+
+      const certificateTemplate = await loadTemplateDataUrl(db, sub.templateId);
+      res.json({
+        ok: true,
+        submission: {
+          id: sub.id,
+          examId: sub.examId,
+          examTitle: sub.examTitle,
+          certificatePublishDate: sub.certificatePublishDate,
+          certificateTemplate,
+          certificateConfig: normalizeCertConfig(sub.certificateConfig),
+          studentName: cleanName,
+          studentCode: sub.studentCode,
+          score: sub.score,
+          totalQuestions: sub.totalQuestions,
+          percentage: sub.percentage,
+          passed: sub.passed,
+          statusText: sub.statusText,
+          certificateNo: sub.certificateNo || null,
+          submittedAt: sub.submittedAt,
+          sheetSynced: sub.sheetSynced,
+          webhookSynced: sub.webhookSynced,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'ไม่สามารถอัปเดตชื่อ-นามสกุลได้',
+      });
+    }
   });
 
   // Mark submissions as synced to Google Sheets
-  router.post('/submissions/mark-synced', (req, res) => {
-    const { submissionIds } = req.body || {};
-    if (!Array.isArray(submissionIds)) {
-      res.status(400).json({ error: 'รายการไม่ถูกต้อง' });
-      return;
-    }
-    const idSet = new Set(submissionIds);
-    const store = ensureStore();
-    for (const sub of store.submissions) {
-      if (idSet.has(sub.id)) {
-        sub.sheetSynced = true;
+  router.post('/submissions/mark-synced', async (req, res) => {
+    try {
+      const { submissionIds } = req.body || {};
+      if (!Array.isArray(submissionIds)) {
+        res.status(400).json({ error: 'รายการไม่ถูกต้อง' });
+        return;
       }
+
+      const db = getServerDb();
+      await Promise.all(
+        submissionIds.slice(0, 500).map((sid) =>
+          updateDoc(doc(db, 'vaults', VAULT_ID, 'submissions', String(sid)), {
+            sheetSynced: true,
+            updatedAt: serverTimestamp(),
+          }).catch(() => null)
+        )
+      );
+
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'อัปเดตสถานะซิงค์ไม่สำเร็จ',
+      });
     }
-    saveStore(store);
-    res.json({ ok: true });
   });
 
-  // Get Submissions
-  router.get('/submissions', (req, res) => {
-    const store = ensureStore();
-    const studentCode = String(req.query.studentCode || '').trim();
-    const isAdmin = isAdminAuthorized(req);
+  // Get Submissions from Cloud Firestore
+  router.get('/submissions', async (req, res) => {
+    try {
+      const studentCode = String(req.query.studentCode || '').trim();
+      const isAdmin = isAdminAuthorized(req);
 
-    if (isAdmin && !studentCode) {
-      res.json({ submissions: store.submissions });
-      return;
+      if (!isAdmin && !studentCode) {
+        res.json({ submissions: [] });
+        return;
+      }
+
+      const db = getServerDb();
+      const vault = await ensureVaultIndex(db);
+      if (vault.submissionIds.length === 0) {
+        res.json({ submissions: [] });
+        return;
+      }
+
+      const snaps = await Promise.all(
+        vault.submissionIds.map((sid) =>
+          getDoc(doc(db, 'vaults', VAULT_ID, 'submissions', sid))
+        )
+      );
+      let rawSubs = snaps.filter((s) => s.exists()).map((s) => s.data());
+      if (studentCode) {
+        rawSubs = rawSubs.filter((s) => s.studentCode === studentCode);
+      }
+
+      const uniqueTemplateIds = Array.from(
+        new Set(rawSubs.map((s) => s.templateId).filter(Boolean))
+      );
+      const tplEntries = await Promise.all(
+        uniqueTemplateIds.map(async (tid) => [tid, await loadTemplateDataUrl(db, tid)])
+      );
+      const tplMap = new Map(tplEntries);
+
+      const submissions = rawSubs.map((sub) => ({
+        id: sub.id,
+        examId: sub.examId,
+        examTitle: sub.examTitle,
+        certificatePublishDate: sub.certificatePublishDate,
+        certificateTemplate: tplMap.get(sub.templateId) || BLANK_CERT_FRAME_SVG,
+        certificateConfig: normalizeCertConfig(sub.certificateConfig),
+        studentName: sub.studentName,
+        studentCode: sub.studentCode,
+        score: sub.score,
+        totalQuestions: sub.totalQuestions,
+        percentage: sub.percentage,
+        passed: sub.passed,
+        statusText: sub.statusText,
+        certificateNo: sub.certificateNo || null,
+        submittedAt: sub.submittedAt,
+        sheetSynced: Boolean(sub.sheetSynced),
+        webhookSynced: Boolean(sub.webhookSynced),
+      }));
+
+      res.json({ submissions });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'ไม่สามารถดึงประวัติการสอบได้',
+      });
     }
-
-    if (studentCode) {
-      const matched = store.submissions.filter((s) => s.studentCode === studentCode);
-      res.json({ submissions: matched });
-      return;
-    }
-
-    res.json({ submissions: [] });
   });
 
-  // Integration Settings
-  router.get('/settings', (_req, res) => {
-    const store = ensureStore();
-    res.json({
-      settings: store.settings,
-      stats: {
-        totalExams: store.exams.length,
-        totalSubmissions: store.submissions.length,
-        passedCount: store.submissions.filter((s) => s.passed).length,
-      },
-    });
+  // Integration Settings from Cloud Firestore
+  router.get('/settings', async (_req, res) => {
+    try {
+      const db = getServerDb();
+      const vault = await ensureVaultIndex(db);
+      res.json({
+        settings: {
+          spreadsheetId: vault.spreadsheetId,
+          spreadsheetUrl: vault.spreadsheetUrl,
+          spreadsheetTitle: vault.spreadsheetTitle,
+          sheetTabName: vault.sheetTabName,
+          appsScriptWebhookUrl: vault.appsScriptWebhookUrl,
+        },
+        stats: {
+          totalExams: vault.examIds.length,
+          totalSubmissions: vault.submissionIds.length,
+          passedCount: 0,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'ไม่สามารถดึงการตั้งค่าระบบได้',
+      });
+    }
   });
 
-  router.put('/settings', (req, res) => {
+  router.put('/settings', async (req, res) => {
     if (!isAdminAuthorized(req)) {
       res.status(403).json({ error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
       return;
     }
-    const store = ensureStore();
-    const body = req.body || {};
-    store.settings = {
-      spreadsheetId:
-        typeof body.spreadsheetId === 'string'
-          ? body.spreadsheetId.trim()
-          : store.settings.spreadsheetId,
-      spreadsheetUrl:
-        typeof body.spreadsheetUrl === 'string'
-          ? body.spreadsheetUrl.trim()
-          : store.settings.spreadsheetUrl,
-      spreadsheetTitle:
-        typeof body.spreadsheetTitle === 'string'
-          ? body.spreadsheetTitle.trim()
-          : store.settings.spreadsheetTitle,
-      sheetTabName:
-        typeof body.sheetTabName === 'string'
-          ? body.sheetTabName.trim()
-          : store.settings.sheetTabName,
-      appsScriptWebhookUrl:
-        typeof body.appsScriptWebhookUrl === 'string'
-          ? body.appsScriptWebhookUrl.trim()
-          : store.settings.appsScriptWebhookUrl,
-    };
-    saveStore(store);
-    res.json({ ok: true, settings: store.settings });
+
+    try {
+      const db = getServerDb();
+      const vault = await ensureVaultIndex(db);
+      const body = req.body || {};
+
+      const nextSettings = {
+        spreadsheetId:
+          typeof body.spreadsheetId === 'string'
+            ? body.spreadsheetId.trim().slice(0, 200)
+            : vault.spreadsheetId,
+        spreadsheetUrl:
+          typeof body.spreadsheetUrl === 'string'
+            ? body.spreadsheetUrl.trim().slice(0, 500)
+            : vault.spreadsheetUrl,
+        spreadsheetTitle:
+          typeof body.spreadsheetTitle === 'string'
+            ? body.spreadsheetTitle.trim().slice(0, 300)
+            : vault.spreadsheetTitle,
+        sheetTabName:
+          typeof body.sheetTabName === 'string'
+            ? body.sheetTabName.trim().slice(0, 200)
+            : vault.sheetTabName,
+        appsScriptWebhookUrl:
+          typeof body.appsScriptWebhookUrl === 'string'
+            ? body.appsScriptWebhookUrl.trim().slice(0, 600)
+            : vault.appsScriptWebhookUrl,
+      };
+
+      try {
+        await updateDoc(doc(db, 'vaults', VAULT_ID), {
+          ...nextSettings,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (err) {
+        buildFirestoreErrorInfo(err, 'update', `vaults/${VAULT_ID}`);
+        throw err;
+      }
+
+      res.json({ ok: true, settings: nextSettings });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'บันทึกการตั้งค่าไม่สำเร็จ',
+      });
+    }
   });
 
   return router;

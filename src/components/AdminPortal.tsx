@@ -14,6 +14,7 @@ import {
   Upload,
   Image as ImageIcon,
   Calendar,
+  Pencil,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import {
@@ -55,6 +56,7 @@ interface AdminPortalProps {
 }
 
 interface DraftQuestion {
+  id?: string;
   text: string;
   options: [string, string, string, string];
   correctIndex: number;
@@ -80,8 +82,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [searchFilter, setSearchFilter] = useState('');
 
-  // Exam Creator Form State
+  // Exam Creator / Editor Form State
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newPublishDate, setNewPublishDate] = useState(() => getBangkokDateString());
@@ -184,6 +187,51 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     setDraftQuestions((prev) => prev.map((q, i) => (i === idx ? updater(q) : q)));
   };
 
+  const resetExamForm = () => {
+    const today = getBangkokDateString();
+    setEditingExamId(null);
+    setNewTitle('');
+    setNewDescription('');
+    setNewPublishDate(today);
+    setNewCertPublishDate(today);
+    setCertDateManuallyEdited(false);
+    setCertTemplateDataUrl('');
+    setCertFileName('');
+    setCertConfig({ ...DEFAULT_CERTIFICATE_CONFIG });
+    setDraftQuestions([createEmptyQuestion()]);
+  };
+
+  const handleStartEditExam = (exam: ExamSet) => {
+    const today = getBangkokDateString();
+    setEditingExamId(exam.id);
+    setNewTitle(exam.title);
+    setNewDescription(exam.description || '');
+    setNewPublishDate(exam.publishDate || today);
+    setNewCertPublishDate(exam.certificatePublishDate || exam.publishDate || today);
+    setCertDateManuallyEdited(true);
+    setCertTemplateDataUrl(exam.certificateTemplate || '');
+    setCertFileName('แม่แบบเกียรติบัตรปัจจุบัน');
+    setCertConfig({ ...DEFAULT_CERTIFICATE_CONFIG, ...exam.certificateConfig });
+    setDraftQuestions(
+      exam.questions.length > 0
+        ? exam.questions.map((q) => ({
+            id: q.id,
+            text: q.text,
+            options: [
+              q.options[0] || '',
+              q.options[1] || '',
+              q.options[2] || '',
+              q.options[3] || '',
+            ],
+            correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+          }))
+        : [createEmptyQuestion()]
+    );
+    setExamFormMessage(null);
+    setShowCreateForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleCreateExam = async (e: React.FormEvent) => {
     e.preventDefault();
     setExamFormMessage(null);
@@ -198,8 +246,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
     setSavingExam(true);
     try {
-      const res = await fetch('/api/exams', {
-        method: 'POST',
+      const isEditing = Boolean(editingExamId);
+      const endpoint = isEditing ? `/api/exams/${editingExamId}` : '/api/exams';
+      const method = isEditing ? 'PUT' : 'POST';
+
+      const res = await fetch(endpoint, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           'x-admin-token': adminToken,
@@ -223,20 +275,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       }
 
       const today = getBangkokDateString();
-      setNewTitle('');
-      setNewDescription('');
-      setNewPublishDate(today);
-      setNewCertPublishDate(today);
-      setCertDateManuallyEdited(false);
-      setCertTemplateDataUrl('');
-      setCertFileName('');
-      setCertConfig({ ...DEFAULT_CERTIFICATE_CONFIG });
-      setDraftQuestions([createEmptyQuestion()]);
+      resetExamForm();
       setShowCreateForm(false);
       setExamFormMessage({
         type: 'success',
-        text:
-          data.exam.publishDate > today
+        text: isEditing
+          ? `บันทึกการแก้ไขชุดข้อสอบ "${data.exam.title}" และรูปแบบเกียรติบัตรเรียบร้อยแล้ว`
+          : data.exam.publishDate > today
             ? `บันทึกชุดข้อสอบล่วงหน้า "${data.exam.title}" เรียบร้อยแล้ว (จะเผยแพร่วันที่ ${formatThaiDisplayDate(data.exam.publishDate)})`
             : `สร้างและเผยแพร่ชุดข้อสอบ "${data.exam.title}" พร้อมรูปแบบเกียรติบัตรเรียบร้อยแล้ว`,
       });
@@ -245,7 +290,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     } catch (err) {
       setExamFormMessage({
         type: 'error',
-        text: err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการสร้างข้อสอบ',
+        text: err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการบันทึกข้อสอบ',
       });
     } finally {
       setSavingExam(false);
@@ -761,13 +806,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             <button
               type="button"
               onClick={() => {
-                setShowCreateForm((v) => !v);
+                if (showCreateForm) {
+                  resetExamForm();
+                  setShowCreateForm(false);
+                } else {
+                  resetExamForm();
+                  setShowCreateForm(true);
+                }
                 setExamFormMessage(null);
               }}
               className="self-start sm:self-auto inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#0f2942] rounded-lg hover:bg-[#163a5c] transition-colors whitespace-nowrap shrink-0"
             >
               <Plus className="w-4 h-4" />
-              <span>{showCreateForm ? 'ปิดฟอร์มสร้างข้อสอบ' : 'เพิ่มชุดข้อสอบใหม่'}</span>
+              <span>{showCreateForm ? 'ปิดฟอร์มข้อสอบ' : 'เพิ่มชุดข้อสอบใหม่'}</span>
             </button>
           </div>
 
@@ -795,10 +846,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             >
               <div className="pb-4 border-b border-slate-200">
                 <h2 className="text-lg font-bold text-slate-900">
-                  เพิ่มชุดข้อสอบใหม่และกำหนดรูปแบบเกียรติบัตร
+                  {editingExamId
+                    ? 'แก้ไขชุดข้อสอบและรูปแบบเกียรติบัตร'
+                    : 'เพิ่มชุดข้อสอบใหม่และกำหนดรูปแบบเกียรติบัตร'}
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  กำหนดชื่อข้อสอบ อัปโหลดไฟล์แม่แบบเกียรติบัตร และเพิ่มโจทย์คำถามตัวเลือก ก–ง
+                  กำหนดชื่อข้อสอบ อัปโหลดไฟล์แม่แบบเกียรติบัตร และจัดการโจทย์คำถามตัวเลือก ก–ง (บันทึกถาวรบน Cloud Database)
                 </p>
               </div>
 
@@ -1071,7 +1124,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <div className="flex items-center gap-2.5">
                     <button
                       type="button"
-                      onClick={() => setShowCreateForm(false)}
+                      onClick={() => {
+                        resetExamForm();
+                        setShowCreateForm(false);
+                      }}
                       className="px-4 py-2.5 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 whitespace-nowrap"
                     >
                       ยกเลิก
@@ -1081,7 +1137,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       disabled={savingExam}
                       className="px-6 py-2.5 text-sm font-semibold text-white bg-[#0f2942] rounded-lg hover:bg-[#163a5c] disabled:opacity-50 transition-colors whitespace-nowrap"
                     >
-                      {savingExam ? 'กำลังบันทึก...' : 'บันทึกชุดข้อสอบ'}
+                      {savingExam
+                        ? 'กำลังบันทึก...'
+                        : editingExamId
+                          ? 'บันทึกการแก้ไขชุดข้อสอบ'
+                          : 'บันทึกชุดข้อสอบ'}
                     </button>
                   </div>
                 </div>
@@ -1126,7 +1186,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditExam(exam)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0f2942] bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>แก้ไขชุดข้อสอบ</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleOpenEditCertModal(exam)}

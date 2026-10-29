@@ -1,0 +1,244 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar: Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core Primitives
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedAuth() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidVaultId(vaultId) {
+      return vaultId is string && vaultId.size() >= 24 && vaultId.size() <= 128 && vaultId.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isVerifiedAuth() && (
+        request.auth.token.email == 'Teeranop.ch@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function vaultExists(vaultId) {
+      return exists(/databases/$(database)/documents/vaults/$(vaultId)) ||
+        existsAfter(/databases/$(database)/documents/vaults/$(vaultId));
+    }
+
+    // Validation Helpers
+    function isValidAdminRecord(data, adminUid) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'createdAt']) &&
+        data.uid is string && data.uid == adminUid && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 254 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidCertConfig(cfg) {
+      return cfg is map &&
+        cfg.keys().hasAll([
+          'textColor', 'nameY', 'examTitleY', 'scoreY', 'dateY',
+          'nameSize', 'examTitleSize', 'scoreSize', 'dateSize'
+        ]) &&
+        cfg.keys().hasOnly([
+          'textColor', 'nameY', 'examTitleY', 'scoreY', 'dateY',
+          'nameSize', 'examTitleSize', 'scoreSize', 'dateSize'
+        ]) &&
+        cfg.textColor is string && cfg.textColor.size() >= 4 && cfg.textColor.size() <= 32 &&
+        cfg.nameY is number && cfg.nameY >= 5 && cfg.nameY <= 96 &&
+        cfg.examTitleY is number && cfg.examTitleY >= 5 && cfg.examTitleY <= 96 &&
+        cfg.scoreY is number && cfg.scoreY >= 5 && cfg.scoreY <= 96 &&
+        cfg.dateY is number && cfg.dateY >= 5 && cfg.dateY <= 96 &&
+        cfg.nameSize is number && cfg.nameSize >= 12 && cfg.nameSize <= 130 &&
+        cfg.examTitleSize is number && cfg.examTitleSize >= 12 && cfg.examTitleSize <= 100 &&
+        cfg.scoreSize is number && cfg.scoreSize >= 10 && cfg.scoreSize <= 90 &&
+        cfg.dateSize is number && cfg.dateSize >= 10 && cfg.dateSize <= 85;
+    }
+
+    function isValidVaultIndex(data) {
+      return data.keys().hasAll([
+          'examIds', 'submissionIds', 'spreadsheetId', 'spreadsheetUrl',
+          'spreadsheetTitle', 'sheetTabName', 'appsScriptWebhookUrl', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'examIds', 'submissionIds', 'spreadsheetId', 'spreadsheetUrl',
+          'spreadsheetTitle', 'sheetTabName', 'appsScriptWebhookUrl', 'createdAt', 'updatedAt'
+        ]) &&
+        data.examIds is list && data.examIds.size() <= 500 &&
+        (data.examIds.size() == 0 || (data.examIds[0] is string && data.examIds[0].size() <= 128)) &&
+        data.submissionIds is list && data.submissionIds.size() <= 5000 &&
+        (data.submissionIds.size() == 0 || (data.submissionIds[0] is string && data.submissionIds[0].size() <= 128)) &&
+        data.spreadsheetId is string && data.spreadsheetId.size() <= 200 &&
+        data.spreadsheetUrl is string && data.spreadsheetUrl.size() <= 500 &&
+        data.spreadsheetTitle is string && data.spreadsheetTitle.size() <= 300 &&
+        data.sheetTabName is string && data.sheetTabName.size() <= 200 &&
+        data.appsScriptWebhookUrl is string && data.appsScriptWebhookUrl.size() <= 600 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidExamDocument(data, examId) {
+      return data.keys().hasAll([
+          'id', 'title', 'description', 'passingPercent', 'publishDate',
+          'certificatePublishDate', 'templateId', 'certificateConfig',
+          'questions', 'createdAtIso', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'title', 'description', 'passingPercent', 'publishDate',
+          'certificatePublishDate', 'templateId', 'certificateConfig',
+          'questions', 'createdAtIso', 'createdAt', 'updatedAt'
+        ]) &&
+        data.id is string && data.id == examId && isValidId(data.id) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+        data.description is string && data.description.size() <= 1000 &&
+        data.passingPercent is number && data.passingPercent >= 1 && data.passingPercent <= 100 &&
+        data.publishDate is string && data.publishDate.size() == 10 && data.publishDate.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+        data.certificatePublishDate is string && data.certificatePublishDate.size() == 10 && data.certificatePublishDate.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+        isValidId(data.templateId) &&
+        isValidCertConfig(data.certificateConfig) &&
+        data.questions is list && data.questions.size() >= 1 && data.questions.size() <= 200 &&
+        data.questions[0] is map &&
+        data.createdAtIso is string && data.createdAtIso.size() >= 10 && data.createdAtIso.size() <= 40 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCertificateTemplate(data, templateId) {
+      return data.keys().hasAll(['id', 'part0', 'part1', 'part2', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'part0', 'part1', 'part2', 'createdAt', 'updatedAt']) &&
+        data.id is string && data.id == templateId && isValidId(data.id) &&
+        data.part0 is string && data.part0.size() >= 20 && data.part0.size() <= 320000 &&
+        data.part1 is string && data.part1.size() <= 320000 &&
+        data.part2 is string && data.part2.size() <= 320000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSubmissionDocument(data, submissionId) {
+      return data.keys().hasAll([
+          'id', 'examId', 'examTitle', 'certificatePublishDate', 'templateId',
+          'certificateConfig', 'studentName', 'studentCode', 'score',
+          'totalQuestions', 'percentage', 'passed', 'statusText',
+          'certificateNo', 'submittedAt', 'sheetSynced', 'webhookSynced',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'examId', 'examTitle', 'certificatePublishDate', 'templateId',
+          'certificateConfig', 'studentName', 'studentCode', 'score',
+          'totalQuestions', 'percentage', 'passed', 'statusText',
+          'certificateNo', 'submittedAt', 'sheetSynced', 'webhookSynced',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.id is string && data.id == submissionId && isValidId(data.id) &&
+        isValidId(data.examId) &&
+        data.examTitle is string && data.examTitle.size() >= 1 && data.examTitle.size() <= 300 &&
+        data.certificatePublishDate is string && data.certificatePublishDate.size() == 10 && data.certificatePublishDate.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+        isValidId(data.templateId) &&
+        isValidCertConfig(data.certificateConfig) &&
+        data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 200 &&
+        data.studentCode is string && data.studentCode.size() == 5 && data.studentCode.matches('^\\d{5}$') &&
+        data.score is number && data.score >= 0 && data.score <= data.totalQuestions &&
+        data.totalQuestions is number && data.totalQuestions >= 1 && data.totalQuestions <= 200 &&
+        data.percentage is number && data.percentage >= 0 && data.percentage <= 100 &&
+        data.passed is bool &&
+        data.statusText is string && data.statusText.size() <= 20 && (data.statusText == 'ผ่าน' || data.statusText == 'ไม่ผ่าน') &&
+        data.certificateNo is string && data.certificateNo.size() <= 64 &&
+        data.submittedAt is string && data.submittedAt.size() >= 10 && data.submittedAt.size() <= 40 &&
+        data.sheetSynced is bool &&
+        data.webhookSynced is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // Connection Health Probe (Read-only single docId 'connection')
+    match /test/{docId} {
+      allow get: if docId is string && docId == 'connection';
+      allow list: if false;
+      allow write: if false;
+    }
+
+    // Collection 1: Admin Registry
+    match /admins/{adminUid} {
+      allow get: if isVerifiedAuth() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
+      allow list: if false;
+      allow create: if isAdmin() && isValidId(adminUid) && isValidAdminRecord(incoming(), adminUid) && incoming().createdAt == request.time;
+      allow update: if isValidAdminRecord(incoming(), adminUid) && isAdmin() && isValidId(adminUid) && incoming().createdAt == existing().createdAt && incoming().diff(existing()).affectedKeys().hasOnly(['email']);
+      allow delete: if isAdmin() && isValidId(adminUid);
+    }
+
+    // Collection 2: Capability-Keyed Application Vault
+    match /vaults/{vaultId} {
+      allow get: if isValidVaultId(vaultId);
+      allow list: if false;
+      allow create: if isValidVaultId(vaultId) && isValidVaultIndex(incoming()) && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isValidVaultIndex(incoming()) && isValidVaultId(vaultId) && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time && (
+        isAdmin() ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['examIds', 'updatedAt']) ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['submissionIds', 'updatedAt']) ||
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'spreadsheetId', 'spreadsheetUrl', 'spreadsheetTitle', 'sheetTabName', 'appsScriptWebhookUrl', 'updatedAt'
+        ])
+      );
+      allow delete: if isAdmin() && isValidVaultId(vaultId);
+
+      // Subcollection 2a: Exams
+      match /exams/{examId} {
+        allow get: if isValidVaultId(vaultId) && isValidId(examId) && exists(/databases/$(database)/documents/vaults/$(vaultId));
+        allow list: if false;
+        allow create: if isValidVaultId(vaultId) && isValidId(examId) && isValidExamDocument(incoming(), examId) && incoming().createdAt == request.time && incoming().updatedAt == request.time && vaultExists(vaultId);
+        allow update: if isValidExamDocument(incoming(), examId) && isValidVaultId(vaultId) && isValidId(examId) && incoming().createdAt == existing().createdAt && incoming().createdAtIso == existing().createdAtIso && incoming().passingPercent == existing().passingPercent && incoming().id == existing().id && incoming().updatedAt == request.time && exists(/databases/$(database)/documents/vaults/$(vaultId)) && (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'description', 'questions', 'publishDate', 'certificatePublishDate', 'templateId', 'certificateConfig', 'updatedAt'
+          ])
+        );
+        allow delete: if isValidVaultId(vaultId) && isValidId(examId) && exists(/databases/$(database)/documents/vaults/$(vaultId));
+      }
+
+      // Subcollection 2b: Chunked Certificate Templates
+      match /templates/{templateId} {
+        allow get: if isValidVaultId(vaultId) && isValidId(templateId) && exists(/databases/$(database)/documents/vaults/$(vaultId));
+        allow list: if false;
+        allow create: if isValidVaultId(vaultId) && isValidId(templateId) && isValidCertificateTemplate(incoming(), templateId) && incoming().createdAt == request.time && incoming().updatedAt == request.time && vaultExists(vaultId);
+        allow update: if isValidCertificateTemplate(incoming(), templateId) && isValidVaultId(vaultId) && isValidId(templateId) && incoming().createdAt == existing().createdAt && incoming().id == existing().id && incoming().updatedAt == request.time && exists(/databases/$(database)/documents/vaults/$(vaultId)) && (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['part0', 'part1', 'part2', 'updatedAt'])
+        );
+        allow delete: if isValidVaultId(vaultId) && isValidId(templateId) && exists(/databases/$(database)/documents/vaults/$(vaultId));
+      }
+
+      // Subcollection 2c: Student Submissions (Terminal Outcome Locked)
+      match /submissions/{submissionId} {
+        allow get: if isValidVaultId(vaultId) && isValidId(submissionId) && exists(/databases/$(database)/documents/vaults/$(vaultId));
+        allow list: if false;
+        allow create: if isValidVaultId(vaultId) && isValidId(submissionId) && isValidSubmissionDocument(incoming(), submissionId) && incoming().createdAt == request.time && incoming().updatedAt == request.time && vaultExists(vaultId) && exists(/databases/$(database)/documents/vaults/$(vaultId)/exams/$(incoming().examId));
+        allow update: if isValidSubmissionDocument(incoming(), submissionId) && isValidVaultId(vaultId) && isValidId(submissionId) && incoming().createdAt == existing().createdAt && incoming().id == existing().id && incoming().examId == existing().examId && incoming().studentCode == existing().studentCode && incoming().score == existing().score && incoming().totalQuestions == existing().totalQuestions && incoming().percentage == existing().percentage && incoming().passed == existing().passed && incoming().statusText == existing().statusText && incoming().certificateNo == existing().certificateNo && incoming().submittedAt == existing().submittedAt && incoming().updatedAt == request.time && exists(/databases/$(database)/documents/vaults/$(vaultId)) && (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['studentName', 'updatedAt']) ||
+          (incoming().diff(existing()).affectedKeys().hasOnly(['sheetSynced', 'updatedAt']) && incoming().sheetSynced == true) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['examTitle', 'certificatePublishDate', 'templateId', 'certificateConfig', 'updatedAt'])
+        );
+        allow delete: if isAdmin() && isValidVaultId(vaultId) && isValidId(submissionId);
+      }
+    }
+  }
+}
