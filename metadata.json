@@ -1,0 +1,6 @@
+{
+  "name": "SAPHA SPS — ระบบสอบออนไลน์และเกียรติบัตรอัตโนมัติ",
+  "description": "ระบบจัดสอบออนไลน์ ตรวจคำตอบอัตโนมัติ บันทึกผลสอบลง Google Sheets และออกเกียรติบัตรออนไลน์พร้อมดาวน์โหลดทันที",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
