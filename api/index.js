@@ -421,12 +421,10 @@ export function createApiRouter() {
         return;
       }
 
-      if (!certificateTemplate || !String(certificateTemplate).startsWith('data:image/')) {
-        res
-          .status(400)
-          .json({ error: 'กรุณาอัปโหลดไฟล์รูปภาพรูปแบบเกียรติบัตรสำหรับชุดข้อสอบนี้' });
-        return;
-      }
+      const resolvedCertificateTemplate =
+        certificateTemplate && String(certificateTemplate).startsWith('data:image/')
+          ? String(certificateTemplate)
+          : BLANK_CERT_FRAME_SVG;
 
       if (!Array.isArray(questions) || questions.length === 0) {
         res.status(400).json({ error: 'กรุณาเพิ่มคำถามอย่างน้อย 1 ข้อ' });
@@ -455,7 +453,7 @@ export function createApiRouter() {
         }
       }
 
-      const tplParts = splitTemplateParts(String(certificateTemplate));
+      const tplParts = splitTemplateParts(resolvedCertificateTemplate);
       const today = getBangkokTodayDate();
       const resolvedPublishDate = normalizeDateString(publishDate, today);
       const resolvedCertDate = normalizeDateString(certificatePublishDate, resolvedPublishDate);
@@ -520,7 +518,7 @@ export function createApiRouter() {
         throw err;
       }
 
-      templateMemoryCache.set(templateId, String(certificateTemplate));
+      templateMemoryCache.set(templateId, resolvedCertificateTemplate);
 
       res.status(201).json({
         exam: {
@@ -531,7 +529,7 @@ export function createApiRouter() {
           publishDate: resolvedPublishDate,
           certificatePublishDate: resolvedCertDate,
           isPublished: resolvedPublishDate <= today,
-          certificateTemplate: String(certificateTemplate),
+          certificateTemplate: resolvedCertificateTemplate,
           certificateConfig: normalizedConfig,
           createdAt: createdAtIso,
           questionCount: normalizedQuestions.length,

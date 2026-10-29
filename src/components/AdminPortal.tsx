@@ -81,10 +81,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [adminExams, setAdminExams] = useState<ExamSet[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [searchFilter, setSearchFilter] = useState('');
+  const [examSearchFilter, setExamSearchFilter] = useState('');
 
-  // Exam Creator / Editor Form State
+  // Exam Creator Form State
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newPublishDate, setNewPublishDate] = useState(() => getBangkokDateString());
@@ -103,6 +103,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+
+  // Edit Existing Exam Title & Content Modal
+  const [editingContentExam, setEditingContentExam] = useState<ExamSet | null>(null);
+  const [editExamTitle, setEditExamTitle] = useState('');
+  const [editExamDescription, setEditExamDescription] = useState('');
+  const [editExamPublishDate, setEditExamPublishDate] = useState('');
+  const [editExamCertDate, setEditExamCertDate] = useState('');
+  const [editExamQuestions, setEditExamQuestions] = useState<DraftQuestion[]>([]);
+  const [savingEditContent, setSavingEditContent] = useState(false);
+  const [editContentError, setEditContentError] = useState<string | null>(null);
 
   // Edit Existing Exam Certificate & Schedule Modal
   const [editingCertExam, setEditingCertExam] = useState<ExamSet | null>(null);
@@ -189,7 +199,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
   const resetExamForm = () => {
     const today = getBangkokDateString();
-    setEditingExamId(null);
     setNewTitle('');
     setNewDescription('');
     setNewPublishDate(today);
@@ -201,18 +210,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     setDraftQuestions([createEmptyQuestion()]);
   };
 
-  const handleStartEditExam = (exam: ExamSet) => {
+  const handleOpenEditContentModal = (exam: ExamSet) => {
     const today = getBangkokDateString();
-    setEditingExamId(exam.id);
-    setNewTitle(exam.title);
-    setNewDescription(exam.description || '');
-    setNewPublishDate(exam.publishDate || today);
-    setNewCertPublishDate(exam.certificatePublishDate || exam.publishDate || today);
-    setCertDateManuallyEdited(true);
-    setCertTemplateDataUrl(exam.certificateTemplate || '');
-    setCertFileName('แม่แบบเกียรติบัตรปัจจุบัน');
-    setCertConfig({ ...DEFAULT_CERTIFICATE_CONFIG, ...exam.certificateConfig });
-    setDraftQuestions(
+    setEditingContentExam(exam);
+    setEditExamTitle(exam.title);
+    setEditExamDescription(exam.description || '');
+    setEditExamPublishDate(exam.publishDate || today);
+    setEditExamCertDate(exam.certificatePublishDate || exam.publishDate || today);
+    setEditExamQuestions(
       exam.questions.length > 0
         ? exam.questions.map((q) => ({
             id: q.id,
@@ -227,31 +232,69 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           }))
         : [createEmptyQuestion()]
     );
-    setExamFormMessage(null);
-    setShowCreateForm(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setEditContentError(null);
+  };
+
+  const handleUpdateEditModalQuestion = (
+    idx: number,
+    updater: (prev: DraftQuestion) => DraftQuestion
+  ) => {
+    setEditExamQuestions((prev) => prev.map((q, i) => (i === idx ? updater(q) : q)));
+  };
+
+  const handleSaveEditedContent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingContentExam) return;
+    setEditContentError(null);
+    setSavingEditContent(true);
+
+    try {
+      const res = await fetch(`/api/exams/${editingContentExam.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': adminToken,
+        },
+        body: JSON.stringify({
+          title: editExamTitle,
+          description: editExamDescription,
+          publishDate: editExamPublishDate,
+          certificatePublishDate: editExamCertDate,
+          questions: editExamQuestions,
+        }),
+      });
+      const data = await parseJsonResponse<{
+        exam: ExamSet;
+        error?: string;
+      }>(res);
+      if (!res.ok) {
+        throw new Error(data.error || 'บันทึกการแก้ไขชุดข้อสอบไม่สำเร็จ');
+      }
+
+      setEditingContentExam(null);
+      await loadAdminRecords(adminToken);
+      await onRefreshGlobalData();
+      setExamFormMessage({
+        type: 'success',
+        text: `บันทึกการแก้ไขชื่อและเนื้อหาชุดข้อสอบ "${data.exam.title}" เรียบร้อยแล้ว`,
+      });
+    } catch (err) {
+      setEditContentError(
+        err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการบันทึกการแก้ไข'
+      );
+    } finally {
+      setSavingEditContent(false);
+    }
   };
 
   const handleCreateExam = async (e: React.FormEvent) => {
     e.preventDefault();
     setExamFormMessage(null);
 
-    if (!certTemplateDataUrl) {
-      setExamFormMessage({
-        type: 'error',
-        text: 'กรุณาอัปโหลดไฟล์รูปภาพรูปแบบเกียรติบัตรก่อนบันทึกชุดข้อสอบ',
-      });
-      return;
-    }
-
     setSavingExam(true);
     try {
-      const isEditing = Boolean(editingExamId);
-      const endpoint = isEditing ? `/api/exams/${editingExamId}` : '/api/exams';
-      const method = isEditing ? 'PUT' : 'POST';
-
-      const res = await fetch(endpoint, {
-        method,
+      const res = await fetch('/api/exams', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-admin-token': adminToken,
@@ -261,7 +304,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           description: newDescription,
           publishDate: newPublishDate,
           certificatePublishDate: newCertPublishDate,
-          certificateTemplate: certTemplateDataUrl,
+          certificateTemplate: certTemplateDataUrl || undefined,
           certificateConfig: certConfig,
           questions: draftQuestions,
         }),
@@ -279,11 +322,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       setShowCreateForm(false);
       setExamFormMessage({
         type: 'success',
-        text: isEditing
-          ? `บันทึกการแก้ไขชุดข้อสอบ "${data.exam.title}" และรูปแบบเกียรติบัตรเรียบร้อยแล้ว`
-          : data.exam.publishDate > today
+        text:
+          data.exam.publishDate > today
             ? `บันทึกชุดข้อสอบล่วงหน้า "${data.exam.title}" เรียบร้อยแล้ว (จะเผยแพร่วันที่ ${formatThaiDisplayDate(data.exam.publishDate)})`
-            : `สร้างและเผยแพร่ชุดข้อสอบ "${data.exam.title}" พร้อมรูปแบบเกียรติบัตรเรียบร้อยแล้ว`,
+            : `สร้างและเผยแพร่ชุดข้อสอบ "${data.exam.title}" เรียบร้อยแล้ว`,
       });
       await loadAdminRecords(adminToken);
       await onRefreshGlobalData();
@@ -846,12 +888,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             >
               <div className="pb-4 border-b border-slate-200">
                 <h2 className="text-lg font-bold text-slate-900">
-                  {editingExamId
-                    ? 'แก้ไขชุดข้อสอบและรูปแบบเกียรติบัตร'
-                    : 'เพิ่มชุดข้อสอบใหม่และกำหนดรูปแบบเกียรติบัตร'}
+                  เพิ่มชุดข้อสอบใหม่และกำหนดรูปแบบเกียรติบัตร
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  กำหนดชื่อข้อสอบ อัปโหลดไฟล์แม่แบบเกียรติบัตร และจัดการโจทย์คำถามตัวเลือก ก–ง (บันทึกถาวรบน Cloud Database)
+                  กำหนดชื่อข้อสอบ อัปโหลดไฟล์แม่แบบเกียรติบัตร (หรืออัปโหลดภายหลังได้) และเพิ่มโจทย์คำถามตัวเลือก ก–ง
                 </p>
               </div>
 
@@ -1137,16 +1177,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       disabled={savingExam}
                       className="px-6 py-2.5 text-sm font-semibold text-white bg-[#0f2942] rounded-lg hover:bg-[#163a5c] disabled:opacity-50 transition-colors whitespace-nowrap"
                     >
-                      {savingExam
-                        ? 'กำลังบันทึก...'
-                        : editingExamId
-                          ? 'บันทึกการแก้ไขชุดข้อสอบ'
-                          : 'บันทึกชุดข้อสอบ'}
+                      {savingExam ? 'กำลังบันทึก...' : 'บันทึกชุดข้อสอบ'}
                     </button>
                   </div>
                 </div>
               </div>
             </form>
+          )}
+
+          {/* Search Filter for Exam Sets */}
+          {adminExams.length > 0 && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <input
+                type="search"
+                value={examSearchFilter}
+                onChange={(e) => setExamSearchFilter(e.target.value)}
+                placeholder="ค้นหาชื่อชุดข้อสอบ หรือคำอธิบาย..."
+                className="w-full sm:max-w-sm px-3.5 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
+              />
+              <span className="text-xs text-slate-500 tabular-nums">
+                ทั้งหมด {adminExams.length} ชุดข้อสอบ
+              </span>
+            </div>
           )}
 
           {/* Existing Exam Sets List */}
@@ -1156,7 +1208,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 ยังไม่มีชุดข้อสอบในระบบ กดปุ่ม &ldquo;เพิ่มชุดข้อสอบใหม่&rdquo; เพื่อเริ่มต้นสร้างข้อสอบ
               </div>
             ) : (
-              adminExams.map((exam) => (
+              adminExams
+                .filter((ex) => {
+                  const q = examSearchFilter.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    ex.title.toLowerCase().includes(q) ||
+                    (ex.description || '').toLowerCase().includes(q)
+                  );
+                })
+                .map((exam) => (
                 <div key={exam.id} className="p-6 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                     <div className="space-y-1.5">
@@ -1189,11 +1250,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
                       <button
                         type="button"
-                        onClick={() => handleStartEditExam(exam)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0f2942] bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
+                        onClick={() => handleOpenEditContentModal(exam)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#0f2942] hover:bg-[#163a5c] rounded-lg transition-colors whitespace-nowrap"
                       >
                         <Pencil className="w-3.5 h-3.5" />
-                        <span>แก้ไขชุดข้อสอบ</span>
+                        <span>แก้ไขชื่อและเนื้อหาข้อสอบ</span>
                       </button>
                       <button
                         type="button"
@@ -1563,6 +1624,238 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
             </details>
           </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Exam Title, Description, Dates & Questions Content */}
+      {editingContentExam && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-start justify-center p-4 overflow-y-auto">
+          <form
+            onSubmit={handleSaveEditedContent}
+            className="bg-white border border-slate-200 rounded-xl max-w-4xl w-full p-6 sm:p-8 space-y-6 my-8 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-200">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  แก้ไขชื่อข้อสอบและเนื้อหาคำถาม
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  ปรับแก้ชื่อชุดข้อสอบ คำอธิบาย วันเผยแพร่ โจทย์ ตัวเลือก ก–ง และเฉลย แล้วกดบันทึกเพื่ออัปเดตถาวรบนฐานข้อมูล
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingContentExam(null)}
+                className="p-1.5 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-100 shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {editContentError && (
+              <div className="flex items-center gap-2 text-sm rounded-lg px-4 py-3 border bg-rose-50 border-rose-200 text-rose-800">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{editContentError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                  ชื่อชุดข้อสอบ * (แสดงในหน้าสอบและบนเกียรติบัตร)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editExamTitle}
+                  onChange={(e) => setEditExamTitle(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                  คำอธิบายชุดข้อสอบ
+                </label>
+                <input
+                  type="text"
+                  value={editExamDescription}
+                  onChange={(e) => setEditExamDescription(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-800 mb-1.5">
+                    วันที่เผยแพร่ข้อสอบ *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editExamPublishDate}
+                    onChange={(e) => setEditExamPublishDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                    {formatThaiDisplayDate(editExamPublishDate)}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-800 mb-1.5">
+                    วันที่เผยแพร่เกียรติบัตร (แสดงบนเกียรติบัตร) *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editExamCertDate}
+                    onChange={(e) => setEditExamCertDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
+                  />
+                  <p className="text-[11px] text-[#0f2942] font-medium mt-1 tabular-nums">
+                    {formatThaiCeremonialDate(editExamCertDate)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-200 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-base font-bold text-slate-900">
+                    เนื้อหาโจทย์และตัวเลือก ({editExamQuestions.length} ข้อ)
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    คลิกที่ปุ่ม ก, ข, ค หรือ ง เพื่อเปลี่ยนข้อที่เป็นคำตอบที่ถูกต้อง
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditExamQuestions((prev) => [...prev, createEmptyQuestion()])
+                  }
+                  className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0f2942] bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>เพิ่มข้อคำถาม</span>
+                </button>
+              </div>
+
+              <div className="divide-y divide-slate-200">
+                {editExamQuestions.map((q, qIdx) => (
+                  <div key={q.id || qIdx} className="py-5 first:pt-1 last:pb-1 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-mono font-bold text-slate-800 tabular-nums">
+                        ข้อที่ {qIdx + 1}
+                      </span>
+                      {editExamQuestions.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditExamQuestions((prev) =>
+                              prev.filter((_, idx) => idx !== qIdx)
+                            )
+                          }
+                          className="inline-flex items-center gap-1 text-xs font-medium text-rose-600 hover:text-rose-800 whitespace-nowrap"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>ลบข้อนี้</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <input
+                      type="text"
+                      required
+                      value={q.text}
+                      onChange={(e) =>
+                        handleUpdateEditModalQuestion(qIdx, (prev) => ({
+                          ...prev,
+                          text: e.target.value,
+                        }))
+                      }
+                      placeholder={`พิมพ์โจทย์คำถามข้อที่ ${qIdx + 1}...`}
+                      className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
+                    />
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {CHOICE_LABELS.map((label, optIdx) => {
+                        const isCorrect = q.correctIndex === optIdx;
+                        return (
+                          <div key={label} className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdateEditModalQuestion(qIdx, (prev) => ({
+                                  ...prev,
+                                  correctIndex: optIdx,
+                                }))
+                              }
+                              title="คลิกเพื่อตั้งเป็นข้อที่ถูกต้อง"
+                              className={`px-2.5 py-2 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap shrink-0 ${
+                                isCorrect
+                                  ? 'bg-emerald-700 text-white border-emerald-700'
+                                  : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                              }`}
+                            >
+                              {label} {isCorrect ? '✓ เฉลย' : ''}
+                            </button>
+                            <input
+                              type="text"
+                              required
+                              value={q.options[optIdx]}
+                              onChange={(e) =>
+                                handleUpdateEditModalQuestion(qIdx, (prev) => {
+                                  const nextOpts: [string, string, string, string] = [
+                                    ...prev.options,
+                                  ];
+                                  nextOpts[optIdx] = e.target.value;
+                                  return { ...prev, options: nextOpts };
+                                })
+                              }
+                              placeholder={`ตัวเลือก ${label}`}
+                              className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() =>
+                  setEditExamQuestions((prev) => [...prev, createEmptyQuestion()])
+                }
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-800 bg-slate-100 rounded-lg hover:bg-slate-200"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>เพิ่มคำถามข้อถัดไป</span>
+              </button>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingContentExam(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEditContent}
+                  className="px-5 py-2 text-xs font-semibold text-white bg-[#0f2942] rounded-lg hover:bg-[#163a5c] disabled:opacity-50"
+                >
+                  {savingEditContent ? 'กำลังบันทึก...' : 'บันทึกการแก้ไขชื่อและเนื้อหา'}
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
       )}
 
