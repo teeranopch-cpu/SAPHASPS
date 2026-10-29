@@ -1383,6 +1383,111 @@ export function createApiRouter() {
     }
   });
 
+  // Delete ALL Passed Submissions from Cloud Firestore (Admin Only)
+  router.delete('/submissions/passed', async (req, res) => {
+    if (!isAdminAuthorized(req)) {
+      res.status(403).json({ error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+      return;
+    }
+
+    try {
+      const db = getServerDb();
+      const vault = await ensureVaultIndex(db);
+      if (vault.submissionIds.length === 0) {
+        res.json({ ok: true, deletedCount: 0 });
+        return;
+      }
+
+      const snaps = await Promise.all(
+        vault.submissionIds.map((sid) =>
+          getDoc(doc(db, 'vaults', VAULT_ID, 'submissions', sid))
+        )
+      );
+
+      const passedIds = snaps
+        .filter((s) => s.exists() && s.data().passed === true)
+        .map((s) => s.id);
+
+      if (passedIds.length === 0) {
+        res.json({ ok: true, deletedCount: 0 });
+        return;
+      }
+
+      const passedSet = new Set(passedIds);
+      const remainingIds = vault.submissionIds.filter((sid) => !passedSet.has(sid));
+
+      // Delete passed documents in chunks <= 400 per Firestore batch limit
+      for (let i = 0; i < passedIds.length; i += 400) {
+        const chunk = passedIds.slice(i, i + 400);
+        const batch = writeBatch(db);
+        for (const sid of chunk) {
+          batch.delete(doc(db, 'vaults', VAULT_ID, 'submissions', sid));
+        }
+        if (i + 400 >= passedIds.length) {
+          batch.update(doc(db, 'vaults', VAULT_ID), {
+            submissionIds: remainingIds,
+            updatedAt: serverTimestamp(),
+          });
+        }
+        try {
+          await batch.commit();
+        } catch (err) {
+          buildFirestoreErrorInfo(err, 'delete', `vaults/${VAULT_ID}/submissions`);
+          throw err;
+        }
+      }
+
+      res.json({ ok: true, deletedCount: passedIds.length });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'ไม่สามารถลบข้อมูลผู้สอบผ่านทั้งหมดได้',
+      });
+    }
+  });
+
+  // Delete Single Submission from Cloud Firestore (Admin Only)
+  router.delete('/submissions/:id', async (req, res) => {
+    if (!isAdminAuthorized(req)) {
+      res.status(403).json({ error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+      return;
+    }
+
+    try {
+      const submissionId = req.params.id;
+      const db = getServerDb();
+      const vault = await ensureVaultIndex(db);
+      const subRef = doc(db, 'vaults', VAULT_ID, 'submissions', submissionId);
+      const subSnap = await getDoc(subRef);
+
+      if (!subSnap.exists() && !vault.submissionIds.includes(submissionId)) {
+        res.status(404).json({ error: 'ไม่พบข้อมูลผลการสอบรายการนี้' });
+        return;
+      }
+
+      const batch = writeBatch(db);
+      if (subSnap.exists()) {
+        batch.delete(subRef);
+      }
+      batch.update(doc(db, 'vaults', VAULT_ID), {
+        submissionIds: vault.submissionIds.filter((id) => id !== submissionId),
+        updatedAt: serverTimestamp(),
+      });
+
+      try {
+        await batch.commit();
+      } catch (err) {
+        buildFirestoreErrorInfo(err, 'delete', `vaults/${VAULT_ID}/submissions/${submissionId}`);
+        throw err;
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'ไม่สามารถลบข้อมูลผลการสอบได้',
+      });
+    }
+  });
+
   // Integration Settings from Cloud Firestore
   router.get('/settings', async (_req, res) => {
     try {

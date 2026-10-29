@@ -98,6 +98,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   }, [member.pin]);
 
   useEffect(() => {
+    fetchMyHistory();
+  }, [fetchMyHistory]);
+
+  useEffect(() => {
     if (activeTab === StudentTab.HISTORY) {
       fetchMyHistory();
     }
@@ -191,6 +195,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       }
 
       setResult(submission);
+      setMyHistory((prev) => [submission, ...prev.filter((item) => item.id !== submission.id)]);
       onSubmissionComplete();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'ไม่สามารถส่งข้อสอบได้');
@@ -239,7 +244,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           </button>
         </div>
 
-        {loadingHistory ? (
+        {loadingHistory && myHistory.length === 0 ? (
           <div className="py-16 text-center text-sm text-slate-500">
             กำลังโหลดประวัติการสอบ...
           </div>
@@ -248,14 +253,16 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             ยังไม่มีประวัติการทำแบบทดสอบของ {member.displayName}
           </div>
         ) : (
-          <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-200">
+          <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-200 overflow-hidden">
             {myHistory.map((item) => {
               const certReady =
                 !item.certificatePublishDate || todayBangkok >= item.certificatePublishDate;
               return (
                 <div
                   key={item.id}
-                  className="p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  className={`p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                    item.passed ? 'bg-emerald-50/50 border-l-4 border-l-emerald-600' : ''
+                  }`}
                 >
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 tabular-nums">
@@ -340,13 +347,31 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
   // EXAM SELECTION VIEW
   if (!selectedExam) {
+    const passedByExamId = new Map<string, SubmissionRecord>();
+    for (const sub of myHistory) {
+      if (!sub.passed) continue;
+      const existing = passedByExamId.get(sub.examId);
+      if (!existing || sub.percentage > existing.percentage) {
+        passedByExamId.set(sub.examId, sub);
+      }
+    }
+    const passedExamsCount = exams.filter((e) => passedByExamId.has(e.id)).length;
+
     return (
       <div className="max-w-4xl mx-auto py-8 sm:py-10 px-4">
         <div className="pb-6 border-b border-slate-200 mb-8">
-          <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums mb-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 tabular-nums mb-1">
             <span>ผู้เข้าสอบ: {member.displayName}</span>
             <span aria-hidden="true">·</span>
             <span>ตำแหน่ง/สถานะ: {member.memberRole}</span>
+            {exams.length > 0 && passedExamsCount > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="font-semibold text-emerald-700">
+                  สอบผ่านแล้ว {passedExamsCount}/{exams.length} ชุด
+                </span>
+              </>
+            )}
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
             เลือกชุดข้อสอบที่ต้องการทำ
@@ -369,16 +394,44 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           <div className="space-y-4">
             {exams.map((exam, idx) => {
               const isAvailable = exam.isPublished && exam.publishDate <= todayBangkok;
+              const passedSub = passedByExamId.get(exam.id);
+              const isPassed = Boolean(passedSub);
+              const certReady =
+                passedSub &&
+                (!passedSub.certificatePublishDate ||
+                  todayBangkok >= passedSub.certificatePublishDate);
+
               return (
                 <div
                   key={exam.id}
-                  className="bg-white border border-slate-200 rounded-xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:border-slate-300 transition-colors"
+                  className={`rounded-xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-colors ${
+                    isPassed
+                      ? 'bg-emerald-50/85 border border-emerald-400 border-l-4 border-l-emerald-600 hover:border-emerald-500'
+                      : 'bg-white border border-slate-200 hover:border-slate-300'
+                  }`}
                 >
                   <div className="space-y-2 max-w-2xl">
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 tabular-nums">
-                      <span className="font-mono font-semibold text-slate-700">
+                    <div
+                      className={`flex flex-wrap items-center gap-2 text-xs tabular-nums ${
+                        isPassed ? 'text-emerald-900/80' : 'text-slate-500'
+                      }`}
+                    >
+                      <span
+                        className={`font-mono font-semibold ${
+                          isPassed ? 'text-emerald-950' : 'text-slate-700'
+                        }`}
+                      >
                         ชุดที่ {String(idx + 1).padStart(2, '0')}
                       </span>
+                      {isPassed && passedSub && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="inline-flex items-center gap-1 font-bold text-emerald-800">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                            <span>สอบผ่านแล้ว ({passedSub.percentage}%)</span>
+                          </span>
+                        </>
+                      )}
                       <span aria-hidden="true">·</span>
                       <span>จำนวน {exam.questionCount} ข้อ</span>
                       <span aria-hidden="true">·</span>
@@ -394,12 +447,26 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                         </span>
                       )}
                     </div>
-                    <h2 className="text-lg font-bold text-slate-900 leading-snug text-balance">
+                    <h2
+                      className={`text-lg font-bold leading-snug text-balance ${
+                        isPassed ? 'text-emerald-950' : 'text-slate-900'
+                      }`}
+                    >
                       {exam.title}
                     </h2>
-                    <p className="text-sm text-slate-600 leading-relaxed">{exam.description}</p>
+                    <p
+                      className={`text-sm leading-relaxed ${
+                        isPassed ? 'text-emerald-900/85' : 'text-slate-600'
+                      }`}
+                    >
+                      {exam.description}
+                    </p>
                     {exam.certificatePublishDate && (
-                      <p className="text-xs text-slate-500 tabular-nums">
+                      <p
+                        className={`text-xs tabular-nums ${
+                          isPassed ? 'text-emerald-800/85' : 'text-slate-500'
+                        }`}
+                      >
                         วันที่เผยแพร่และแสดงในเกียรติบัตร:{' '}
                         {formatThaiDisplayDate(exam.certificatePublishDate)}
                       </p>
@@ -408,14 +475,44 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
                   <div className="shrink-0">
                     {isAvailable ? (
-                      <button
-                        type="button"
-                        onClick={() => handleStartExam(exam)}
-                        className="w-full md:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-[#0f2942] rounded-lg hover:bg-[#163a5c] transition-colors whitespace-nowrap shrink-0"
-                      >
-                        <span>เริ่มทำข้อสอบ</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
+                      isPassed && passedSub ? (
+                        <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row items-stretch sm:items-center gap-2">
+                          {certReady && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setHistoryCertItem(passedSub);
+                                onChangeTab(StudentTab.HISTORY);
+                              }}
+                              className="w-full md:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 transition-colors whitespace-nowrap shrink-0"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>ดูเกียรติบัตร</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleStartExam(exam)}
+                            className={`w-full md:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                              certReady
+                                ? 'text-emerald-900 bg-white border border-emerald-400 hover:bg-emerald-100/70'
+                                : 'text-white bg-emerald-700 hover:bg-emerald-800'
+                            }`}
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                            <span>ทำอีกครั้ง</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleStartExam(exam)}
+                          className="w-full md:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-[#0f2942] rounded-lg hover:bg-[#163a5c] transition-colors whitespace-nowrap shrink-0"
+                        >
+                          <span>เริ่มทำข้อสอบ</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      )
                     ) : (
                       <button
                         type="button"
@@ -552,7 +649,12 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <CertificateCard
                 submission={result}
                 memberPin={member.pin}
-                onSubmissionUpdated={(updated) => setResult(updated)}
+                onSubmissionUpdated={(updated) => {
+                  setResult(updated);
+                  setMyHistory((prev) =>
+                    prev.map((item) => (item.id === updated.id ? updated : item))
+                  );
+                }}
               />
             </div>
           ) : (

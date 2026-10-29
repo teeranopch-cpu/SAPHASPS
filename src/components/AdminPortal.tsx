@@ -127,6 +127,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // Delete Exam Confirmation Modal
   const [examPendingDelete, setExamPendingDelete] = useState<ExamSet | null>(null);
 
+  // Submission Filter & Delete Confirmation Modals
+  const [submissionStatusFilter, setSubmissionStatusFilter] = useState<
+    'all' | 'passed' | 'failed'
+  >('all');
+  const [submissionPendingDelete, setSubmissionPendingDelete] =
+    useState<SubmissionRecord | null>(null);
+  const [confirmDeleteAllPassedOpen, setConfirmDeleteAllPassedOpen] = useState(false);
+  const [deletingSubmission, setDeletingSubmission] = useState(false);
+  const [submissionFeedback, setSubmissionFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
   // Certificate Preview Modal from Submissions Table
   const [previewSubmission, setPreviewSubmission] = useState<SubmissionRecord | null>(null);
 
@@ -395,6 +408,72 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     }
   };
 
+  const handleConfirmDeleteSubmission = async () => {
+    if (!submissionPendingDelete) return;
+    setDeletingSubmission(true);
+    setSubmissionFeedback(null);
+    try {
+      const res = await fetch(`/api/submissions/${submissionPendingDelete.id}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-token': adminToken },
+      });
+      const data = await parseJsonResponse<{ ok?: boolean; error?: string }>(res);
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'ไม่สามารถลบข้อมูลผลการสอบได้');
+      }
+      const deletedName = submissionPendingDelete.studentName;
+      setSubmissionPendingDelete(null);
+      await loadAdminRecords(adminToken);
+      await onRefreshGlobalData();
+      setSubmissionFeedback({
+        type: 'success',
+        text: `ลบข้อมูลผลการสอบของ "${deletedName}" เรียบร้อยแล้ว`,
+      });
+    } catch (err) {
+      setSubmissionFeedback({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'ไม่สามารถลบข้อมูลผลการสอบได้',
+      });
+      setSubmissionPendingDelete(null);
+    } finally {
+      setDeletingSubmission(false);
+    }
+  };
+
+  const handleConfirmDeleteAllPassed = async () => {
+    setDeletingSubmission(true);
+    setSubmissionFeedback(null);
+    try {
+      const res = await fetch('/api/submissions/passed', {
+        method: 'DELETE',
+        headers: { 'x-admin-token': adminToken },
+      });
+      const data = await parseJsonResponse<{
+        ok?: boolean;
+        deletedCount?: number;
+        error?: string;
+      }>(res);
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'ไม่สามารถลบข้อมูลผู้สอบผ่านทั้งหมดได้');
+      }
+      setConfirmDeleteAllPassedOpen(false);
+      await loadAdminRecords(adminToken);
+      await onRefreshGlobalData();
+      setSubmissionFeedback({
+        type: 'success',
+        text: `ลบข้อมูลผู้ที่สอบผ่านทั้งหมดจำนวน ${data.deletedCount ?? 0} รายการ เรียบร้อยแล้ว`,
+      });
+    } catch (err) {
+      setSubmissionFeedback({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'ไม่สามารถลบข้อมูลผู้สอบผ่านทั้งหมดได้',
+      });
+      setConfirmDeleteAllPassedOpen(false);
+    } finally {
+      setDeletingSubmission(false);
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setSheetBusy(true);
     setSheetStatus(null);
@@ -568,7 +647,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const passedSubmissionsCount = submissions.filter((s) => s.passed).length;
+  const failedSubmissionsCount = submissions.length - passedSubmissionsCount;
+
   const filteredSubmissions = submissions.filter((s) => {
+    if (submissionStatusFilter === 'passed' && !s.passed) return false;
+    if (submissionStatusFilter === 'failed' && s.passed) return false;
     const q = searchFilter.trim().toLowerCase();
     if (!q) return true;
     return (
@@ -1277,16 +1361,64 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       {/* TAB 2: SUBMISSIONS RESULTS TABLE */}
       {activeTab === AdminTab.SUBMISSIONS && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <input
-              type="search"
-              value={searchFilter}
-              onChange={(e) => setSearchFilter(e.target.value)}
-              placeholder="ค้นหาชื่อ-นามสกุล, ตำแหน่ง/สถานะ (เช่น ครู, นักเรียน) หรือชื่อข้อสอบ..."
-              className="w-full sm:max-w-md px-3.5 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
-            />
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
+              <div className="inline-flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg self-start shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSubmissionStatusFilter('all')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
+                    submissionStatusFilter === 'all'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  ทั้งหมด ({submissions.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubmissionStatusFilter('passed')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
+                    submissionStatusFilter === 'passed'
+                      ? 'bg-white text-emerald-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  สอบผ่าน ({passedSubmissionsCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubmissionStatusFilter('failed')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
+                    submissionStatusFilter === 'failed'
+                      ? 'bg-white text-rose-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  ไม่ผ่าน ({failedSubmissionsCount})
+                </button>
+              </div>
+
+              <input
+                type="search"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                placeholder="ค้นหาชื่อ-นามสกุล, ตำแหน่ง/สถานะ หรือชื่อข้อสอบ..."
+                className="w-full sm:max-w-xs px-3.5 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
+              />
+            </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                disabled={passedSubmissionsCount === 0 || deletingSubmission}
+                onClick={() => setConfirmDeleteAllPassedOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 disabled:opacity-40 transition-colors whitespace-nowrap"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>ลบข้อมูลคนสอบผ่านทั้งหมด ({passedSubmissionsCount})</span>
+              </button>
+
               {integrationSettings.spreadsheetUrl && (
                 <a
                   href={integrationSettings.spreadsheetUrl}
@@ -1310,6 +1442,33 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
           </div>
 
+          {submissionFeedback && (
+            <div
+              className={`flex items-center justify-between gap-3 text-sm rounded-lg px-4 py-3 border ${
+                submissionFeedback.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50 border-rose-200 text-rose-800'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {submissionFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                )}
+                <span>{submissionFeedback.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSubmissionFeedback(null)}
+                className="p-1 text-current opacity-70 hover:opacity-100"
+                aria-label="ปิดข้อความแจ้งเตือน"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
             {filteredSubmissions.length === 0 ? (
               <div className="p-10 text-center text-sm text-slate-500">
@@ -1326,7 +1485,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       <th className="py-3 px-4">ชุดข้อสอบ</th>
                       <th className="py-3 px-4 text-right whitespace-nowrap">คะแนน</th>
                       <th className="py-3 px-4 whitespace-nowrap">สถานะ</th>
-                      <th className="py-3 px-4 text-right whitespace-nowrap">เกียรติบัตร</th>
+                      <th className="py-3 px-4 text-right whitespace-nowrap">เกียรติบัตร / จัดการ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 text-sm">
@@ -1364,18 +1523,26 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                          {sub.passed ? (
+                          <div className="inline-flex items-center justify-end gap-3">
+                            {sub.passed && (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewSubmission(sub)}
+                                className="inline-flex items-center gap-1 text-xs font-semibold text-[#0284c7] hover:underline"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>ดูเกียรติบัตร</span>
+                              </button>
+                            )}
                             <button
                               type="button"
-                              onClick={() => setPreviewSubmission(sub)}
-                              className="inline-flex items-center gap-1 text-xs font-semibold text-[#0284c7] hover:underline"
+                              onClick={() => setSubmissionPendingDelete(sub)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
                             >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>ดูเกียรติบัตร</span>
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>ลบ</span>
                             </button>
-                          ) : (
-                            <span className="text-xs text-slate-400">—</span>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1984,6 +2151,85 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 className="px-4 py-2 text-xs font-semibold text-white bg-rose-700 rounded-lg hover:bg-rose-800"
               >
                 ลบชุดข้อสอบ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Single Submission Confirmation Modal */}
+      {submissionPendingDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-6 space-y-4 shadow-lg">
+            <h3 className="text-lg font-bold text-slate-900">
+              ยืนยันการลบข้อมูลผลการสอบ?
+            </h3>
+            <div className="text-sm text-slate-600 space-y-1.5 leading-relaxed">
+              <p>
+                คุณต้องการลบประวัติผลการสอบและเกียรติบัตรของ{' '}
+                <strong className="text-slate-900">{submissionPendingDelete.studentName}</strong>{' '}
+                ({submissionPendingDelete.memberRole || '-'}) หรือไม่?
+              </p>
+              <p className="text-xs text-slate-500">
+                ชุดข้อสอบ: {submissionPendingDelete.examTitle} · คะแนน{' '}
+                {submissionPendingDelete.score}/{submissionPendingDelete.totalQuestions} (
+                {submissionPendingDelete.percentage}% · {submissionPendingDelete.statusText})
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={deletingSubmission}
+                onClick={() => setSubmissionPendingDelete(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                disabled={deletingSubmission}
+                onClick={handleConfirmDeleteSubmission}
+                className="px-4 py-2 text-xs font-semibold text-white bg-rose-700 rounded-lg hover:bg-rose-800 disabled:opacity-50"
+              >
+                {deletingSubmission ? 'กำลังลบข้อมูล...' : 'ยืนยันการลบ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete ALL Passed Submissions Confirmation Modal */}
+      {confirmDeleteAllPassedOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-6 space-y-4 shadow-lg">
+            <h3 className="text-lg font-bold text-slate-900">
+              ยืนยันการลบข้อมูลผู้สอบผ่านทั้งหมด?
+            </h3>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              ระบบจะลบข้อมูลผลการสอบและเกียรติบัตรของคนที่<strong>สอบผ่านทั้งหมด</strong>จำนวน{' '}
+              <strong className="font-mono tabular-nums text-rose-700">
+                {passedSubmissionsCount}
+              </strong>{' '}
+              รายการออกจากฐานข้อมูลถาวร การดำเนินการนี้ไม่สามารถย้อนกลับได้
+            </p>
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={deletingSubmission}
+                onClick={() => setConfirmDeleteAllPassedOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                disabled={deletingSubmission}
+                onClick={handleConfirmDeleteAllPassed}
+                className="px-4 py-2 text-xs font-semibold text-white bg-rose-700 rounded-lg hover:bg-rose-800 disabled:opacity-50"
+              >
+                {deletingSubmission
+                  ? 'กำลังลบข้อมูล...'
+                  : `ยืนยันลบทั้งหมด (${passedSubmissionsCount} รายการ)`}
               </button>
             </div>
           </div>

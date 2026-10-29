@@ -272,7 +272,7 @@ service cloud.firestore {
           (incoming().diff(existing()).affectedKeys().hasOnly(['sheetSynced', 'updatedAt']) && incoming().sheetSynced == true) ||
           incoming().diff(existing()).affectedKeys().hasOnly(['examTitle', 'certificatePublishDate', 'templateId', 'certificateConfig', 'updatedAt'])
         );
-        allow delete: if isAdmin() && isValidVaultId(vaultId) && isValidId(submissionId);
+        allow delete: if isValidVaultId(vaultId) && isValidId(submissionId) && exists(/databases/$(database)/documents/vaults/$(vaultId));
       }
     }
   }
