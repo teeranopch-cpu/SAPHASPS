@@ -32,6 +32,10 @@ service cloud.firestore {
       return vaultId is string && vaultId.size() >= 24 && vaultId.size() <= 128 && vaultId.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidMemberPin(pin) {
+      return pin is string && pin.size() == 6 && pin.matches('^\\d{6}$') && pin != '000000';
+    }
+
     function isAdmin() {
       return isVerifiedAuth() && (
         request.auth.token.email == 'Teeranop.ch@gmail.com' ||
@@ -96,6 +100,22 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidMemberDocument(data, memberPin) {
+      return data.keys().hasAll([
+          'pin', 'prefix', 'nameBody', 'displayName', 'memberRole', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'pin', 'prefix', 'nameBody', 'displayName', 'memberRole', 'createdAt', 'updatedAt'
+        ]) &&
+        data.pin is string && data.pin == memberPin && isValidMemberPin(data.pin) &&
+        data.prefix is string && data.prefix.size() >= 1 && data.prefix.size() <= 40 &&
+        data.nameBody is string && data.nameBody.size() >= 1 && data.nameBody.size() <= 160 &&
+        data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 200 &&
+        data.memberRole is string && data.memberRole.size() >= 1 && data.memberRole.size() <= 80 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     function isValidExamDocument(data, examId) {
       return data.keys().hasAll([
           'id', 'title', 'description', 'passingPercent', 'publishDate',
@@ -136,17 +156,17 @@ service cloud.firestore {
     function isValidSubmissionDocument(data, submissionId) {
       return data.keys().hasAll([
           'id', 'examId', 'examTitle', 'certificatePublishDate', 'templateId',
-          'certificateConfig', 'studentName', 'studentCode', 'score',
-          'totalQuestions', 'percentage', 'passed', 'statusText',
-          'certificateNo', 'submittedAt', 'sheetSynced', 'webhookSynced',
-          'createdAt', 'updatedAt'
+          'certificateConfig', 'prefix', 'nameBody', 'studentName', 'memberRole',
+          'memberPin', 'score', 'totalQuestions', 'percentage', 'passed',
+          'statusText', 'certificateNo', 'submittedAt', 'sheetSynced',
+          'webhookSynced', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
           'id', 'examId', 'examTitle', 'certificatePublishDate', 'templateId',
-          'certificateConfig', 'studentName', 'studentCode', 'score',
-          'totalQuestions', 'percentage', 'passed', 'statusText',
-          'certificateNo', 'submittedAt', 'sheetSynced', 'webhookSynced',
-          'createdAt', 'updatedAt'
+          'certificateConfig', 'prefix', 'nameBody', 'studentName', 'memberRole',
+          'memberPin', 'score', 'totalQuestions', 'percentage', 'passed',
+          'statusText', 'certificateNo', 'submittedAt', 'sheetSynced',
+          'webhookSynced', 'createdAt', 'updatedAt'
         ]) &&
         data.id is string && data.id == submissionId && isValidId(data.id) &&
         isValidId(data.examId) &&
@@ -154,8 +174,11 @@ service cloud.firestore {
         data.certificatePublishDate is string && data.certificatePublishDate.size() == 10 && data.certificatePublishDate.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
         isValidId(data.templateId) &&
         isValidCertConfig(data.certificateConfig) &&
+        data.prefix is string && data.prefix.size() >= 1 && data.prefix.size() <= 40 &&
+        data.nameBody is string && data.nameBody.size() >= 1 && data.nameBody.size() <= 160 &&
         data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 200 &&
-        data.studentCode is string && data.studentCode.size() == 5 && data.studentCode.matches('^\\d{5}$') &&
+        data.memberRole is string && data.memberRole.size() >= 1 && data.memberRole.size() <= 80 &&
+        isValidMemberPin(data.memberPin) &&
         data.score is number && data.score >= 0 && data.score <= data.totalQuestions &&
         data.totalQuestions is number && data.totalQuestions >= 1 && data.totalQuestions <= 200 &&
         data.percentage is number && data.percentage >= 0 && data.percentage <= 100 &&
@@ -200,7 +223,19 @@ service cloud.firestore {
       );
       allow delete: if isAdmin() && isValidVaultId(vaultId);
 
-      // Subcollection 2a: Exams
+      // Subcollection 2a: Registered Members (Atomic Unique 6-Digit PIN, No Overwrite on Create)
+      match /members/{memberPin} {
+        allow get: if isValidVaultId(vaultId) && isValidMemberPin(memberPin) && exists(/databases/$(database)/documents/vaults/$(vaultId));
+        allow list: if false;
+        allow create: if isValidVaultId(vaultId) && isValidMemberPin(memberPin) && isValidMemberDocument(incoming(), memberPin) && incoming().createdAt == request.time && incoming().updatedAt == request.time && vaultExists(vaultId);
+        allow update: if isValidMemberDocument(incoming(), memberPin) && isValidVaultId(vaultId) && isValidMemberPin(memberPin) && incoming().createdAt == existing().createdAt && incoming().pin == existing().pin && incoming().memberRole == existing().memberRole && incoming().updatedAt == request.time && exists(/databases/$(database)/documents/vaults/$(vaultId)) && (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['prefix', 'nameBody', 'displayName', 'updatedAt'])
+        );
+        allow delete: if isAdmin() && isValidVaultId(vaultId) && isValidMemberPin(memberPin);
+      }
+
+      // Subcollection 2b: Exams
       match /exams/{examId} {
         allow get: if isValidVaultId(vaultId) && isValidId(examId) && exists(/databases/$(database)/documents/vaults/$(vaultId));
         allow list: if false;
@@ -214,7 +249,7 @@ service cloud.firestore {
         allow delete: if isValidVaultId(vaultId) && isValidId(examId) && exists(/databases/$(database)/documents/vaults/$(vaultId));
       }
 
-      // Subcollection 2b: Chunked Certificate Templates
+      // Subcollection 2c: Chunked Certificate Templates
       match /templates/{templateId} {
         allow get: if isValidVaultId(vaultId) && isValidId(templateId) && exists(/databases/$(database)/documents/vaults/$(vaultId));
         allow list: if false;
@@ -226,12 +261,12 @@ service cloud.firestore {
         allow delete: if isValidVaultId(vaultId) && isValidId(templateId) && exists(/databases/$(database)/documents/vaults/$(vaultId));
       }
 
-      // Subcollection 2c: Student Submissions (Terminal Outcome Locked)
+      // Subcollection 2d: Member Submissions (Terminal Outcome Locked + Registered Member Required)
       match /submissions/{submissionId} {
         allow get: if isValidVaultId(vaultId) && isValidId(submissionId) && exists(/databases/$(database)/documents/vaults/$(vaultId));
         allow list: if false;
-        allow create: if isValidVaultId(vaultId) && isValidId(submissionId) && isValidSubmissionDocument(incoming(), submissionId) && incoming().createdAt == request.time && incoming().updatedAt == request.time && vaultExists(vaultId) && exists(/databases/$(database)/documents/vaults/$(vaultId)/exams/$(incoming().examId));
-        allow update: if isValidSubmissionDocument(incoming(), submissionId) && isValidVaultId(vaultId) && isValidId(submissionId) && incoming().createdAt == existing().createdAt && incoming().id == existing().id && incoming().examId == existing().examId && incoming().studentCode == existing().studentCode && incoming().score == existing().score && incoming().totalQuestions == existing().totalQuestions && incoming().percentage == existing().percentage && incoming().passed == existing().passed && incoming().statusText == existing().statusText && incoming().certificateNo == existing().certificateNo && incoming().submittedAt == existing().submittedAt && incoming().updatedAt == request.time && exists(/databases/$(database)/documents/vaults/$(vaultId)) && (
+        allow create: if isValidVaultId(vaultId) && isValidId(submissionId) && isValidSubmissionDocument(incoming(), submissionId) && incoming().createdAt == request.time && incoming().updatedAt == request.time && vaultExists(vaultId) && exists(/databases/$(database)/documents/vaults/$(vaultId)/exams/$(incoming().examId)) && exists(/databases/$(database)/documents/vaults/$(vaultId)/members/$(incoming().memberPin));
+        allow update: if isValidSubmissionDocument(incoming(), submissionId) && isValidVaultId(vaultId) && isValidId(submissionId) && incoming().createdAt == existing().createdAt && incoming().id == existing().id && incoming().examId == existing().examId && incoming().memberPin == existing().memberPin && incoming().memberRole == existing().memberRole && incoming().prefix == existing().prefix && incoming().nameBody == existing().nameBody && incoming().score == existing().score && incoming().totalQuestions == existing().totalQuestions && incoming().percentage == existing().percentage && incoming().passed == existing().passed && incoming().statusText == existing().statusText && incoming().certificateNo == existing().certificateNo && incoming().submittedAt == existing().submittedAt && incoming().updatedAt == request.time && exists(/databases/$(database)/documents/vaults/$(vaultId)) && (
           isAdmin() ||
           incoming().diff(existing()).affectedKeys().hasOnly(['studentName', 'updatedAt']) ||
           (incoming().diff(existing()).affectedKeys().hasOnly(['sheetSynced', 'updatedAt']) && incoming().sheetSynced == true) ||

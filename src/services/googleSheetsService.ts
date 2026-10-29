@@ -145,8 +145,9 @@ export function extractSpreadsheetId(input: string): string {
 
 const SHEET_HEADERS = [
   'วันที่-เวลาส่งข้อสอบ',
-  'เลขประจำตัวนักเรียน (5 หลัก)',
+  'คำนำหน้าชื่อ',
   'ชื่อ-นามสกุล',
+  'ตำแหน่ง/สถานะ',
   'ชุดข้อสอบ',
   'คะแนนที่ได้',
   'คิดเป็นร้อยละ (%)',
@@ -161,8 +162,9 @@ function formatSubmissionRow(sub: SubmissionRecord): (string | number)[] {
   });
   return [
     formattedDate,
-    `'${sub.studentCode}`,
-    sub.studentName,
+    sub.prefix || '-',
+    sub.nameBody || sub.studentName,
+    sub.memberRole || '-',
     sub.examTitle,
     `${sub.score}/${sub.totalQuestions}`,
     sub.percentage,
@@ -218,7 +220,7 @@ export async function createExamSpreadsheet(customTitle?: string): Promise<{
   const sheetTabName: string = data.sheets?.[0]?.properties?.title || 'ผลการสอบ';
 
   // Populate header row
-  const range = encodeURIComponent(`'${sheetTabName}'!A1:H1`);
+  const range = encodeURIComponent(`'${sheetTabName}'!A1:I1`);
   await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
     {
@@ -301,7 +303,7 @@ export async function appendSubmissionToSheet(
     targetTab = meta.sheetTabName;
   }
 
-  const range = encodeURIComponent(`'${targetTab}'!A:H`);
+  const range = encodeURIComponent(`'${targetTab}'!A:I`);
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
       spreadsheetId
@@ -339,7 +341,7 @@ export async function syncAllSubmissionsToSheet(
 
   const ordered = [...submissions].reverse();
   const values = [SHEET_HEADERS, ...ordered.map(formatSubmissionRow)];
-  const range = encodeURIComponent(`'${targetTab}'!A1:H${values.length}`);
+  const range = encodeURIComponent(`'${targetTab}'!A1:I${values.length}`);
 
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
@@ -377,8 +379,9 @@ function doPost(e) {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow([
       "วันที่-เวลา",
-      "เลขประจำตัว 5 หลัก",
+      "คำนำหน้าชื่อ",
       "ชื่อ-นามสกุล",
+      "ตำแหน่ง/สถานะ",
       "ชุดข้อสอบ",
       "คะแนนที่ได้",
       "ร้อยละ (%)",
@@ -389,8 +392,9 @@ function doPost(e) {
   var body = JSON.parse(e.postData.contents);
   sheet.appendRow([
     new Date(body.submittedAt || new Date()),
-    "'" + body.studentCode,
-    body.studentName,
+    body.prefix || "-",
+    body.nameBody || body.studentName,
+    body.memberRole || "-",
     body.examTitle,
     body.score,
     body.percentage,

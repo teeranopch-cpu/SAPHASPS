@@ -64,6 +64,14 @@ export interface ExamSet {
   questions: ExamQuestion[];
 }
 
+export interface MemberProfile {
+  pin: string;
+  prefix: string;
+  nameBody: string;
+  displayName: string;
+  memberRole: string;
+}
+
 export interface SubmissionRecord {
   id: string;
   examId: string;
@@ -71,8 +79,10 @@ export interface SubmissionRecord {
   certificatePublishDate: string; // YYYY-MM-DD
   certificateTemplate: string;
   certificateConfig: CertificateLayoutConfig;
+  prefix: string;
+  nameBody: string;
   studentName: string;
-  studentCode: string;
+  memberRole: string;
   score: number;
   totalQuestions: number;
   percentage: number;

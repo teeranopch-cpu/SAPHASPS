@@ -17,6 +17,7 @@ import {
   ExamQuestion,
   ExamSet,
   IntegrationSettings,
+  MemberProfile,
   StudentTab,
   SubmissionRecord,
 } from '../types';
@@ -26,8 +27,7 @@ import { formatThaiDisplayDate, getBangkokDateString } from '../utils/certificat
 import { parseJsonResponse } from '../utils/apiJson';
 
 interface StudentPortalProps {
-  studentName: string;
-  studentCode: string;
+  member: MemberProfile;
   activeTab: StudentTab;
   onChangeTab: (tab: StudentTab) => void;
   exams: ExamSet[];
@@ -58,8 +58,7 @@ function shuffleExamQuestions(
 }
 
 export const StudentPortal: React.FC<StudentPortalProps> = ({
-  studentName,
-  studentCode,
+  member,
   activeTab,
   onChangeTab,
   exams,
@@ -78,7 +77,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [result, setResult] = useState<SubmissionRecord | null>(null);
   const [sheetSaveNote, setSheetSaveNote] = useState<string | null>(null);
 
-  // Student's own past submissions
+  // Member's own past submissions
   const [myHistory, setMyHistory] = useState<SubmissionRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyCertItem, setHistoryCertItem] = useState<SubmissionRecord | null>(null);
@@ -87,7 +86,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     setLoadingHistory(true);
     try {
       const res = await fetch(
-        `/api/submissions?studentCode=${encodeURIComponent(studentCode)}`
+        `/api/submissions?memberPin=${encodeURIComponent(member.pin)}`
       );
       if (res.ok) {
         const d = await parseJsonResponse<{ submissions?: SubmissionRecord[] }>(res);
@@ -96,7 +95,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     } finally {
       setLoadingHistory(false);
     }
-  }, [studentCode]);
+  }, [member.pin]);
 
   useEffect(() => {
     if (activeTab === StudentTab.HISTORY) {
@@ -146,8 +145,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           examId: selectedExam.id,
-          studentName,
-          studentCode,
+          memberPin: member.pin,
           answers,
         }),
       });
@@ -221,9 +219,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         <div className="pb-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums mb-1">
-              <span>{studentName}</span>
+              <span>{member.displayName}</span>
               <span aria-hidden="true">·</span>
-              <span className="font-mono">รหัส {studentCode}</span>
+              <span>สถานะ: {member.memberRole}</span>
             </div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
               ประวัติการสอบและเกียรติบัตรของฉัน
@@ -247,7 +245,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           </div>
         ) : myHistory.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-500">
-            ยังไม่มีประวัติการทำแบบทดสอบสำหรับรหัสประจำตัว {studentCode}
+            ยังไม่มีประวัติการทำแบบทดสอบของ {member.displayName}
           </div>
         ) : (
           <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-200">
@@ -326,6 +324,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           <div className="pt-2">
             <CertificateCard
               submission={historyCertItem}
+              memberPin={member.pin}
               onSubmissionUpdated={(updated) => {
                 setHistoryCertItem(updated);
                 setMyHistory((prev) =>
@@ -345,9 +344,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       <div className="max-w-4xl mx-auto py-8 sm:py-10 px-4">
         <div className="pb-6 border-b border-slate-200 mb-8">
           <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums mb-1">
-            <span>ผู้เข้าสอบ: {studentName}</span>
+            <span>ผู้เข้าสอบ: {member.displayName}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono">เลขประจำตัว {studentCode}</span>
+            <span>ตำแหน่ง/สถานะ: {member.memberRole}</span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
             เลือกชุดข้อสอบที่ต้องการทำ
@@ -447,7 +446,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 tabular-nums">
                 <span>ผู้เข้าสอบ: {result.studentName}</span>
                 <span aria-hidden="true">·</span>
-                <span className="font-mono">เลขประจำตัว {result.studentCode}</span>
+                <span>ตำแหน่ง/สถานะ: {result.memberRole}</span>
               </div>
               <h1 className="text-xl sm:text-2xl font-bold text-slate-900 text-balance">
                 ผลการประเมิน: {result.examTitle}
@@ -552,6 +551,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               </div>
               <CertificateCard
                 submission={result}
+                memberPin={member.pin}
                 onSubmissionUpdated={(updated) => setResult(updated)}
               />
             </div>
@@ -631,9 +631,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 {selectedExam.title}
               </h1>
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1 tabular-nums">
-                <span>ผู้เข้าสอบ: {studentName}</span>
+                <span>ผู้เข้าสอบ: {member.displayName}</span>
                 <span aria-hidden="true">·</span>
-                <span className="font-mono">รหัส {studentCode}</span>
+                <span>สถานะ: {member.memberRole}</span>
                 <span aria-hidden="true">·</span>
                 <span>เกณฑ์ผ่าน {selectedExam.passingPercent}%</span>
                 <span aria-hidden="true">·</span>

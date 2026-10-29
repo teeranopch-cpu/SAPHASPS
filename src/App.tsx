@@ -4,6 +4,7 @@ import {
   AdminTab,
   ExamSet,
   IntegrationSettings,
+  MemberProfile,
   StudentTab,
 } from './types';
 import { initGoogleAuth } from './services/googleSheetsService';
@@ -13,7 +14,7 @@ import { AdminPortal } from './components/AdminPortal';
 import { parseJsonResponse } from './utils/apiJson';
 
 type ActiveSession =
-  | { role: 'student'; fullName: string; studentCode: string }
+  | { role: 'student'; member: MemberProfile }
   | { role: 'admin'; adminToken: string }
   | null;
 
@@ -141,7 +142,7 @@ export default function App() {
                       : 'hover:text-slate-900'
                   }`}
                 >
-                  ผลการสอบนักเรียน
+                  ผลการสอบผู้เข้าสอบ
                 </button>
                 <button
                   type="button"
@@ -180,9 +181,9 @@ export default function App() {
       <main className="flex-1">
         {!session && (
           <UnifiedLogin
-            onStudentLogin={(fullName, studentCode) => {
+            onMemberLogin={(member) => {
               setStudentTab(StudentTab.EXAMS);
-              setSession({ role: 'student', fullName, studentCode });
+              setSession({ role: 'student', member });
             }}
             onAdminLoginSuccess={(adminToken) => {
               setAdminTab(AdminTab.EXAMS);
@@ -193,8 +194,7 @@ export default function App() {
 
         {session?.role === 'student' && (
           <StudentPortal
-            studentName={session.fullName}
-            studentCode={session.studentCode}
+            member={session.member}
             activeTab={studentTab}
             onChangeTab={setStudentTab}
             exams={exams}

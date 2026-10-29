@@ -281,9 +281,10 @@ export async function downloadCertificateAsPng(submission: SubmissionRecord): Pr
     buildSubmissionRenderPayload(submission)
   );
   const dataUrl = canvas.toDataURL('image/png', 1.0);
+  const fileSuffix = submission.certificateNo || submission.id;
   const link = document.createElement('a');
   link.href = dataUrl;
-  link.download = `certificate-${submission.studentCode}.png`;
+  link.download = `certificate-${fileSuffix}.png`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -294,6 +295,7 @@ export async function downloadCertificateAsPdf(submission: SubmissionRecord): Pr
     buildSubmissionRenderPayload(submission)
   );
   const imgData = canvas.toDataURL('image/png', 1.0);
+  const fileSuffix = submission.certificateNo || submission.id;
   const isLandscape = canvas.width >= canvas.height;
   const pdf = new jsPDF({
     orientation: isLandscape ? 'landscape' : 'portrait',
@@ -303,5 +305,5 @@ export async function downloadCertificateAsPdf(submission: SubmissionRecord): Pr
   const pageWidth = isLandscape ? 297 : 210;
   const pageHeight = isLandscape ? 210 : 297;
   pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
-  pdf.save(`certificate-${submission.studentCode}.pdf`);
+  pdf.save(`certificate-${fileSuffix}.pdf`);
 }

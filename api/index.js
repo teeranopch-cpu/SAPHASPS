@@ -59,9 +59,46 @@ function getServerDb() {
 }
 
 const VAULT_ID = process.env.SAPHA_VAULT_ID || 'sapha_sps_prod_v1_8c4e9f2a7b1d603e';
-const ADMIN_USER = '00000';
-const ADMIN_PASS = '00000';
-const ADMIN_TOKEN = 'SAPHA SPS-admin-00000';
+const ADMIN_PIN = '000000';
+const ADMIN_TOKEN = 'SAPHA SPS-admin-000000';
+
+/**
+ * @param {unknown} raw
+ */
+function normalizeSpaces(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Removes duplicate leading prefix if the user also typed the prefix inside the name input.
+ * @param {string} rawName
+ * @param {string} prefix
+ */
+function stripDuplicatePrefix(rawName, prefix) {
+  const cleanName = normalizeSpaces(rawName);
+  const cleanPrefix = normalizeSpaces(prefix);
+  if (!cleanPrefix || !cleanName) return cleanName;
+  if (cleanName.startsWith(cleanPrefix)) {
+    const rest = cleanName.slice(cleanPrefix.length).trim();
+    if (rest.length > 0) {
+      return rest;
+    }
+  }
+  return cleanName;
+}
+
+/**
+ * Combines Thai prefix and nameBody cleanly for certificates and display.
+ * @param {string} prefix
+ * @param {string} nameBody
+ */
+function composeFullDisplayName(prefix, nameBody) {
+  const p = normalizeSpaces(prefix);
+  const n = stripDuplicatePrefix(nameBody, p);
+  return `${p}${n}`.slice(0, 200);
+}
 
 /** @type {Map<string, string>} */
 const templateMemoryCache = new Map();
@@ -321,14 +358,166 @@ export function createApiRouter() {
     });
   });
 
-  // Admin Login (00000 / 00000)
+  // Admin Login (PIN 000000)
   router.post('/admin/login', (req, res) => {
-    const { username, password } = req.body || {};
-    if (username === ADMIN_USER && password === ADMIN_PASS) {
+    const { pin, password } = req.body || {};
+    const candidate = String(pin ?? password ?? '').trim();
+    if (candidate === ADMIN_PIN) {
       res.json({ ok: true, adminToken: ADMIN_TOKEN });
       return;
     }
-    res.status(401).json({ ok: false, error: 'รหัสผู้ดูแลระบบไม่ถูกต้อง' });
+    res.status(401).json({ ok: false, error: 'รหัส PIN ผู้ดูแลระบบไม่ถูกต้อง' });
+  });
+
+  // Member Registration (Unique 6-Digit PIN, Prefix, Name, Position/Status)
+  router.post('/members/register', async (req, res) => {
+    try {
+      const { prefix, fullName, memberRole, pin } = req.body || {};
+
+      const cleanPrefix = normalizeSpaces(prefix).slice(0, 40);
+      const cleanNameBody = stripDuplicatePrefix(fullName, cleanPrefix).slice(0, 160);
+      const cleanRole = normalizeSpaces(memberRole).slice(0, 80);
+      const cleanPin = String(pin || '').trim();
+
+      if (!cleanPrefix) {
+        res.status(400).json({ error: 'กรุณาเลือกหรือระบุคำนำหน้าชื่อ' });
+        return;
+      }
+      if (!cleanNameBody) {
+        res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุล' });
+        return;
+      }
+      if (!cleanRole) {
+        res.status(400).json({ error: 'กรุณาเลือกตำแหน่งหรือสถานะ (เช่น ครู, นักเรียน)' });
+        return;
+      }
+      if (!/^\d{6}$/.test(cleanPin)) {
+        res.status(400).json({ error: 'กรุณาตั้งรหัส PIN เป็นตัวเลข 6 หลัก' });
+        return;
+      }
+      if (cleanPin === ADMIN_PIN) {
+        res.status(400).json({
+          error: 'รหัส PIN 000000 สงวนไว้สำหรับผู้ดูแลระบบ กรุณาตั้งรหัส PIN อื่น',
+        });
+        return;
+      }
+
+      const db = getServerDb();
+      await ensureVaultIndex(db);
+
+      const memberRef = doc(db, 'vaults', VAULT_ID, 'members', cleanPin);
+      const existingSnap = await getDoc(memberRef);
+      if (existingSnap.exists()) {
+        res.status(409).json({
+          error: 'รหัส PIN 6 หลักนี้มีผู้ใช้งานแล้ว กรุณาตั้งรหัส PIN อื่นที่ไม่ซ้ำกับคนอื่น',
+        });
+        return;
+      }
+
+      const displayName = composeFullDisplayName(cleanPrefix, cleanNameBody);
+      const memberDoc = {
+        pin: cleanPin,
+        prefix: cleanPrefix,
+        nameBody: cleanNameBody,
+        displayName,
+        memberRole: cleanRole,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      try {
+        await setDoc(memberRef, memberDoc);
+      } catch (err) {
+        buildFirestoreErrorInfo(err, 'create', `vaults/${VAULT_ID}/members/${cleanPin}`);
+        throw err;
+      }
+
+      res.status(201).json({
+        ok: true,
+        member: {
+          pin: cleanPin,
+          prefix: cleanPrefix,
+          nameBody: cleanNameBody,
+          displayName,
+          memberRole: cleanRole,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'ไม่สามารถสมัครสมาชิกได้ กรุณาลองใหม่อีกครั้ง',
+      });
+    }
+  });
+
+  // Unified Login (Prefix + First/Last Name + 6-Digit PIN, or Admin PIN 000000)
+  router.post('/auth/login', async (req, res) => {
+    try {
+      const { prefix, fullName, pin } = req.body || {};
+      const cleanPin = String(pin || '').trim();
+
+      if (!/^\d{6}$/.test(cleanPin)) {
+        res.status(400).json({ error: 'กรุณากรอกรหัส PIN เป็นตัวเลข 6 หลัก' });
+        return;
+      }
+
+      // Admin shortcut: PIN 000000
+      if (cleanPin === ADMIN_PIN) {
+        res.json({ ok: true, role: 'admin', adminToken: ADMIN_TOKEN });
+        return;
+      }
+
+      const cleanPrefix = normalizeSpaces(prefix).slice(0, 40);
+      const cleanNameBody = stripDuplicatePrefix(fullName, cleanPrefix).slice(0, 160);
+
+      if (!cleanPrefix) {
+        res.status(400).json({ error: 'กรุณาเลือกหรือระบุคำนำหน้าชื่อ' });
+        return;
+      }
+      if (!cleanNameBody) {
+        res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุล' });
+        return;
+      }
+
+      const db = getServerDb();
+      await ensureVaultIndex(db);
+
+      const memberRef = doc(db, 'vaults', VAULT_ID, 'members', cleanPin);
+      const memberSnap = await getDoc(memberRef);
+
+      if (!memberSnap.exists()) {
+        res.status(401).json({
+          error: 'ไม่พบรหัส PIN 6 หลักนี้ในระบบ กรุณาสมัครสมาชิกก่อนเข้าสู่ระบบ',
+        });
+        return;
+      }
+
+      const member = memberSnap.data();
+      const storedPrefix = normalizeSpaces(member.prefix);
+      const storedNameBody = normalizeSpaces(member.nameBody);
+
+      if (storedPrefix !== cleanPrefix || storedNameBody !== cleanNameBody) {
+        res.status(401).json({
+          error: 'คำนำหน้าชื่อ หรือ ชื่อ-นามสกุล ไม่ตรงกับข้อมูลที่สมัครสมาชิกไว้กับรหัส PIN นี้',
+        });
+        return;
+      }
+
+      res.json({
+        ok: true,
+        role: 'member',
+        member: {
+          pin: member.pin,
+          prefix: storedPrefix,
+          nameBody: storedNameBody,
+          displayName: member.displayName || composeFullDisplayName(storedPrefix, storedNameBody),
+          memberRole: member.memberRole,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'ไม่สามารถเข้าสู่ระบบได้ในขณะนี้',
+      });
+    }
   });
 
   // List Exam Sets from Cloud Firestore
@@ -874,17 +1063,11 @@ export function createApiRouter() {
   // Submit Exam Answers & Persist Submission in Cloud Firestore
   router.post('/submissions', async (req, res) => {
     try {
-      const { examId, studentName, studentCode, answers } = req.body || {};
+      const { examId, memberPin, answers } = req.body || {};
+      const cleanPin = String(memberPin || '').trim();
 
-      const cleanName = String(studentName || '').trim().slice(0, 200);
-      const cleanCode = String(studentCode || '').trim();
-
-      if (!cleanName) {
-        res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุลของนักเรียน' });
-        return;
-      }
-      if (!/^\d{5}$/.test(cleanCode)) {
-        res.status(400).json({ error: 'เลขประจำตัวนักเรียนต้องเป็นตัวเลข 5 หลักเท่านั้น' });
+      if (!/^\d{6}$/.test(cleanPin) || cleanPin === ADMIN_PIN) {
+        res.status(400).json({ error: 'ข้อมูลสมาชิกไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่อีกครั้ง' });
         return;
       }
       if (!examId || typeof examId !== 'string') {
@@ -894,12 +1077,22 @@ export function createApiRouter() {
 
       const db = getServerDb();
       const vault = await ensureVaultIndex(db);
-      const examSnap = await getDoc(doc(db, 'vaults', VAULT_ID, 'exams', examId));
+
+      const [memberSnap, examSnap] = await Promise.all([
+        getDoc(doc(db, 'vaults', VAULT_ID, 'members', cleanPin)),
+        getDoc(doc(db, 'vaults', VAULT_ID, 'exams', examId)),
+      ]);
+
+      if (!memberSnap.exists()) {
+        res.status(403).json({ error: 'ไม่พบข้อมูลสมาชิกในระบบ กรุณาสมัครสมาชิกก่อนเข้าสอบ' });
+        return;
+      }
       if (!examSnap.exists()) {
         res.status(404).json({ error: 'ไม่พบชุดข้อสอบที่เลือก' });
         return;
       }
 
+      const member = memberSnap.data();
       const exam = examSnap.data();
       const today = getBangkokTodayDate();
       if (exam.publishDate > today) {
@@ -925,12 +1118,21 @@ export function createApiRouter() {
       const randomSuffix = Math.floor(100000 + Math.random() * 900000).toString();
       const certificateNo = passed ? `CERT-${new Date().getFullYear()}-${randomSuffix}` : '';
 
+      const cleanPrefix = String(member.prefix || '').slice(0, 40);
+      const cleanNameBody = String(member.nameBody || '').slice(0, 160);
+      const cleanDisplayName = String(
+        member.displayName || composeFullDisplayName(cleanPrefix, cleanNameBody)
+      ).slice(0, 200);
+      const cleanRole = String(member.memberRole || '').slice(0, 80);
+
       let webhookSynced = false;
       if (vault.appsScriptWebhookUrl) {
         webhookSynced = await forwardToAppsScript(vault.appsScriptWebhookUrl, {
           submittedAt,
-          studentCode: cleanCode,
-          studentName: cleanName,
+          prefix: cleanPrefix,
+          nameBody: cleanNameBody,
+          studentName: cleanDisplayName,
+          memberRole: cleanRole,
           examTitle: exam.title,
           score: `${score}/${totalQuestions}`,
           percentage,
@@ -951,8 +1153,11 @@ export function createApiRouter() {
         certificatePublishDate: exam.certificatePublishDate,
         templateId: exam.templateId,
         certificateConfig: normalizedConfig,
-        studentName: cleanName,
-        studentCode: cleanCode,
+        prefix: cleanPrefix,
+        nameBody: cleanNameBody,
+        studentName: cleanDisplayName,
+        memberRole: cleanRole,
+        memberPin: cleanPin,
         score,
         totalQuestions,
         percentage,
@@ -990,8 +1195,10 @@ export function createApiRouter() {
           certificatePublishDate: exam.certificatePublishDate,
           certificateTemplate,
           certificateConfig: normalizedConfig,
-          studentName: cleanName,
-          studentCode: cleanCode,
+          prefix: cleanPrefix,
+          nameBody: cleanNameBody,
+          studentName: cleanDisplayName,
+          memberRole: cleanRole,
           score,
           totalQuestions,
           percentage,
@@ -1015,11 +1222,11 @@ export function createApiRouter() {
     }
   });
 
-  // Update Student Name during Certificate Pre-Download Verification
+  // Update Recipient Name during Certificate Pre-Download Verification
   router.patch('/submissions/:id/student-name', async (req, res) => {
     try {
       const submissionId = req.params.id;
-      const { studentName, studentCode } = req.body || {};
+      const { studentName, memberPin } = req.body || {};
       const cleanName = String(studentName || '').trim().slice(0, 200);
       if (!cleanName) {
         res.status(400).json({ error: 'กรุณาระบุชื่อ-นามสกุลให้ถูกต้อง' });
@@ -1036,7 +1243,7 @@ export function createApiRouter() {
 
       const sub = subSnap.data();
       const isAdmin = isAdminAuthorized(req);
-      if (!isAdmin && sub.studentCode !== String(studentCode || '').trim()) {
+      if (!isAdmin && sub.memberPin !== String(memberPin || '').trim()) {
         res.status(403).json({ error: 'ไม่มีสิทธิ์แก้ไขข้อมูลรายการนี้' });
         return;
       }
@@ -1061,8 +1268,10 @@ export function createApiRouter() {
           certificatePublishDate: sub.certificatePublishDate,
           certificateTemplate,
           certificateConfig: normalizeCertConfig(sub.certificateConfig),
+          prefix: sub.prefix || '',
+          nameBody: sub.nameBody || cleanName,
           studentName: cleanName,
-          studentCode: sub.studentCode,
+          memberRole: sub.memberRole || '-',
           score: sub.score,
           totalQuestions: sub.totalQuestions,
           percentage: sub.percentage,
@@ -1111,10 +1320,10 @@ export function createApiRouter() {
   // Get Submissions from Cloud Firestore
   router.get('/submissions', async (req, res) => {
     try {
-      const studentCode = String(req.query.studentCode || '').trim();
+      const memberPin = String(req.query.memberPin || '').trim();
       const isAdmin = isAdminAuthorized(req);
 
-      if (!isAdmin && !studentCode) {
+      if (!isAdmin && !memberPin) {
         res.json({ submissions: [] });
         return;
       }
@@ -1132,8 +1341,8 @@ export function createApiRouter() {
         )
       );
       let rawSubs = snaps.filter((s) => s.exists()).map((s) => s.data());
-      if (studentCode) {
-        rawSubs = rawSubs.filter((s) => s.studentCode === studentCode);
+      if (memberPin) {
+        rawSubs = rawSubs.filter((s) => s.memberPin === memberPin);
       }
 
       const uniqueTemplateIds = Array.from(
@@ -1151,8 +1360,10 @@ export function createApiRouter() {
         certificatePublishDate: sub.certificatePublishDate,
         certificateTemplate: tplMap.get(sub.templateId) || BLANK_CERT_FRAME_SVG,
         certificateConfig: normalizeCertConfig(sub.certificateConfig),
+        prefix: sub.prefix || '',
+        nameBody: sub.nameBody || sub.studentName || '',
         studentName: sub.studentName,
-        studentCode: sub.studentCode,
+        memberRole: sub.memberRole || '-',
         score: sub.score,
         totalQuestions: sub.totalQuestions,
         percentage: sub.percentage,

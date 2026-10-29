@@ -98,6 +98,61 @@
         "updatedAt"
       ]
     },
+    "MemberDocument": {
+      "title": "MemberDocument",
+      "description": "Registered exam member keyed by unique 6-digit PIN (excluding reserved admin PIN 000000).",
+      "type": "object",
+      "properties": {
+        "pin": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^\\d{6}$",
+          "description": "Unique 6-digit PIN chosen by the member."
+        },
+        "prefix": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Thai name prefix (คำนำหน้าชื่อ)."
+        },
+        "nameBody": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Normalized first and last name without prefix."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 200,
+          "description": "Full display name combining prefix and nameBody."
+        },
+        "memberRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Position or status such as ครู, นักเรียน, บุคลากรทางการศึกษา."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "pin",
+        "prefix",
+        "nameBody",
+        "displayName",
+        "memberRole",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
     "ExamDocument": {
       "title": "ExamDocument",
       "description": "Online exam definition with schedule, certificate layout config, and answer-keyed questions.",
@@ -211,7 +266,7 @@
     },
     "SubmissionDocument": {
       "title": "SubmissionDocument",
-      "description": "Graded student exam submission record with terminal outcome locking.",
+      "description": "Graded member exam submission record with terminal outcome locking.",
       "type": "object",
       "properties": {
         "id": {
@@ -246,16 +301,31 @@
         "certificateConfig": {
           "type": "object"
         },
+        "prefix": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "nameBody": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
         "studentName": {
           "type": "string",
           "minLength": 1,
           "maxLength": 200
         },
-        "studentCode": {
+        "memberRole": {
           "type": "string",
-          "minLength": 5,
-          "maxLength": 5,
-          "pattern": "^\\d{5}$"
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "memberPin": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^\\d{6}$"
         },
         "score": {
           "type": "number"
@@ -305,8 +375,11 @@
         "certificatePublishDate",
         "templateId",
         "certificateConfig",
+        "prefix",
+        "nameBody",
         "studentName",
-        "studentCode",
+        "memberRole",
+        "memberPin",
         "score",
         "totalQuestions",
         "percentage",
@@ -334,6 +407,10 @@
       "schema": { "$ref": "#/entities/VaultIndex" },
       "description": "Master index and integration settings keyed by high-entropy capability ID."
     },
+    "/vaults/{vaultId}/members/{memberPin}": {
+      "schema": { "$ref": "#/entities/MemberDocument" },
+      "description": "Registered members keyed by unique 6-digit PIN."
+    },
     "/vaults/{vaultId}/exams/{examId}": {
       "schema": { "$ref": "#/entities/ExamDocument" },
       "description": "Exam sets belonging to the parent vault."
@@ -344,7 +421,7 @@
     },
     "/vaults/{vaultId}/submissions/{submissionId}": {
       "schema": { "$ref": "#/entities/SubmissionDocument" },
-      "description": "Student exam submissions belonging to the parent vault."
+      "description": "Member exam submissions belonging to the parent vault."
     }
   }
 }

@@ -27,12 +27,14 @@ import { parseJsonResponse } from '../utils/apiJson';
 
 interface CertificateCardProps {
   submission: SubmissionRecord;
+  memberPin?: string;
   adminToken?: string;
   onSubmissionUpdated?: (updated: SubmissionRecord) => void;
 }
 
 export const CertificateCard: React.FC<CertificateCardProps> = ({
   submission,
+  memberPin,
   adminToken,
   onSubmissionUpdated,
 }) => {
@@ -128,7 +130,7 @@ export const CertificateCard: React.FC<CertificateCardProps> = ({
         headers,
         body: JSON.stringify({
           studentName: cleanName,
-          studentCode: localSubmission.studentCode,
+          memberPin,
         }),
       });
       const data = await parseJsonResponse<{
@@ -360,9 +362,9 @@ export const CertificateCard: React.FC<CertificateCardProps> = ({
                     </div>
 
                     <div className="pt-1">
-                      <p className="text-slate-500">เลขประจำตัว 5 หลัก</p>
-                      <p className="text-sm font-mono font-semibold text-slate-900 tabular-nums mt-0.5">
-                        {localSubmission.studentCode}
+                      <p className="text-slate-500">4. ตำแหน่ง / สถานะ</p>
+                      <p className="text-sm font-semibold text-slate-900 mt-0.5">
+                        {localSubmission.memberRole || '-'}
                       </p>
                     </div>
                   </div>

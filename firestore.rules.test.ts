@@ -4,8 +4,7 @@ import path from 'node:path';
 
 /**
  * Deterministic Security Rule Policy & Dirty-Dozen Payload Verification Suite
- * Evaluates all 12 adversarial payloads from security_spec.md against the
- * structural and semantic gates enforced in firestore.rules.
+ * Evaluates adversarial payloads against structural and semantic gates enforced in firestore.rules.
  */
 const rulesPath = fs.existsSync(path.resolve('firestore.rules'))
   ? path.resolve('firestore.rules')
@@ -31,6 +30,15 @@ existingDocs.set(`vaults/${VALID_VAULT_ID}`, {
   spreadsheetTitle: '',
   sheetTabName: '',
   appsScriptWebhookUrl: '',
+  createdAt: REQUEST_TIME,
+  updatedAt: REQUEST_TIME,
+});
+existingDocs.set(`vaults/${VALID_VAULT_ID}/members/123456`, {
+  pin: '123456',
+  prefix: 'นาย',
+  nameBody: 'สมชาย ใจดี',
+  displayName: 'นายสมชาย ใจดี',
+  memberRole: 'นักเรียน',
   createdAt: REQUEST_TIME,
   updatedAt: REQUEST_TIME,
 });
@@ -75,8 +83,11 @@ existingDocs.set(`vaults/${VALID_VAULT_ID}/submissions/sub-valid-1`, {
     scoreSize: 28,
     dateSize: 25,
   },
+  prefix: 'นาย',
+  nameBody: 'สมชาย ใจดี',
   studentName: 'นายสมชาย ใจดี',
-  studentCode: '12345',
+  memberRole: 'นักเรียน',
+  memberPin: '123456',
   score: 0,
   totalQuestions: 5,
   percentage: 0,
@@ -96,6 +107,10 @@ function isValidId(id: unknown): id is string {
 
 function isValidVaultId(id: unknown): id is string {
   return typeof id === 'string' && id.length >= 24 && id.length <= 128 && /^[a-zA-Z0-9_\-]+$/.test(id);
+}
+
+function isValidMemberPin(pin: unknown): pin is string {
+  return typeof pin === 'string' && pin.length === 6 && /^\d{6}$/.test(pin) && pin !== '000000';
 }
 
 function isAdmin(auth: AuthContext | null): boolean {
@@ -125,8 +140,8 @@ function evaluateDirtyDozen(): void {
   };
   assert.equal(isAdmin(spoofAdminAuth), false, 'Payload 1 must return PERMISSION_DENIED');
 
-  // 2. Vault & Submission Enumeration Scraping -> PERMISSION_DENIED
-  const listAllowed = false; // allow list: if false on all collections
+  // 2. Vault, Member & Submission Enumeration Scraping -> PERMISSION_DENIED
+  const listAllowed = false; // allow list: if false on all collections including members
   assert.equal(listAllowed, false, 'Payload 2 must return PERMISSION_DENIED');
 
   // 3. Weak/Short Vault ID Poisoning -> PERMISSION_DENIED
@@ -146,9 +161,11 @@ function evaluateDirtyDozen(): void {
   const hasShadowKey = Object.keys(shadowExamPayload).some((k) => !allowedExamKeys.has(k));
   assert.equal(hasShadowKey, true, 'Payload 4 shadow key detected -> PERMISSION_DENIED');
 
-  // 5. Orphaned Submission Creation (non-existent examId) -> PERMISSION_DENIED
+  // 5. Orphaned Submission Creation (unregistered memberPin or non-existent examId) -> PERMISSION_DENIED
   const orphanExamExists = existingDocs.has(`vaults/${VALID_VAULT_ID}/exams/exam-does-not-exist`);
-  assert.equal(orphanExamExists, false, 'Payload 5 must return PERMISSION_DENIED');
+  const unregisteredPinExists = existingDocs.has(`vaults/${VALID_VAULT_ID}/members/999999`);
+  assert.equal(orphanExamExists, false, 'Payload 5a must return PERMISSION_DENIED');
+  assert.equal(unregisteredPinExists, false, 'Payload 5b must return PERMISSION_DENIED');
 
   // 6. Outcome / Score Tampering Update on Submission -> PERMISSION_DENIED
   const existingSub = existingDocs.get(`vaults/${VALID_VAULT_ID}/submissions/sub-valid-1`)!;
@@ -159,8 +176,11 @@ function evaluateDirtyDozen(): void {
     tamperedSub.percentage === existingSub.percentage;
   assert.equal(outcomeUnchanged, false, 'Payload 6 must return PERMISSION_DENIED');
 
-  // 7. Student Code Format Violation (6 digits instead of 5) -> PERMISSION_DENIED
-  assert.equal(/^\d{5}$/.test('123456'), false, 'Payload 7 must return PERMISSION_DENIED');
+  // 7. Reserved Admin PIN (000000) or Duplicate/Malformed PIN Registration -> PERMISSION_DENIED
+  assert.equal(isValidMemberPin('000000'), false, 'Payload 7a reserved admin PIN 000000 must return PERMISSION_DENIED');
+  assert.equal(isValidMemberPin('12345'), false, 'Payload 7b 5-digit PIN must return PERMISSION_DENIED');
+  const duplicatePinCreateAllowed = !existingDocs.has(`vaults/${VALID_VAULT_ID}/members/123456`);
+  assert.equal(duplicatePinCreateAllowed, false, 'Payload 7c duplicate PIN create must return PERMISSION_DENIED');
 
   // 8. Value Poisoning on Whitelisted Update Key (studentName) -> PERMISSION_DENIED
   const poisonedName: unknown = 'A'.repeat(5000);
@@ -188,8 +208,9 @@ function evaluateDirtyDozen(): void {
     'Payload 12 must return PERMISSION_DENIED'
   );
 
-  // Verify valid id check passes legitimate IDs
+  // Verify valid checks pass legitimate values
   assert.equal(isValidId('exam-valid-1'), true);
+  assert.equal(isValidMemberPin('654321'), true);
   console.log('All 12 Dirty Dozen payloads returned PERMISSION_DENIED as expected.');
 }
 

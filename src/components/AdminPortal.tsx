@@ -537,8 +537,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const handleDownloadCsv = () => {
     const headers = [
       'วันที่-เวลา',
-      'เลขประจำตัว 5 หลัก',
+      'คำนำหน้าชื่อ',
       'ชื่อ-นามสกุล',
+      'ตำแหน่ง/สถานะ',
       'ชุดข้อสอบ',
       'คะแนนที่ได้',
       'คิดเป็นร้อยละ',
@@ -546,8 +547,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     ];
     const rows = submissions.map((s) => [
       new Date(s.submittedAt).toLocaleString('th-TH'),
-      s.studentCode,
-      `"${s.studentName.replace(/"/g, '""')}"`,
+      `"${(s.prefix || '-').replace(/"/g, '""')}"`,
+      `"${(s.nameBody || s.studentName).replace(/"/g, '""')}"`,
+      `"${(s.memberRole || '-').replace(/"/g, '""')}"`,
       `"${s.examTitle.replace(/"/g, '""')}"`,
       `${s.score}/${s.totalQuestions}`,
       `${s.percentage}%`,
@@ -571,7 +573,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     if (!q) return true;
     return (
       s.studentName.toLowerCase().includes(q) ||
-      s.studentCode.includes(q) ||
+      (s.memberRole || '').toLowerCase().includes(q) ||
       s.examTitle.toLowerCase().includes(q)
     );
   });
@@ -751,7 +753,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums mb-1">
-            <span>ระบบผู้ดูแล (00000)</span>
+            <span>ระบบผู้ดูแล (PIN: 000000)</span>
             <span aria-hidden="true">·</span>
             <span>ชุดข้อสอบ {adminExams.length} ชุด</span>
             <span aria-hidden="true">·</span>
@@ -1280,8 +1282,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               type="search"
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
-              placeholder="ค้นหาชื่อนักเรียน, เลขประจำตัว 5 หลัก หรือชื่อข้อสอบ..."
-              className="w-full sm:max-w-sm px-3.5 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
+              placeholder="ค้นหาชื่อ-นามสกุล, ตำแหน่ง/สถานะ (เช่น ครู, นักเรียน) หรือชื่อข้อสอบ..."
+              className="w-full sm:max-w-md px-3.5 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
             />
 
             <div className="flex flex-wrap items-center gap-2.5">
@@ -1319,8 +1321,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-600">
                       <th className="py-3 px-4 whitespace-nowrap">วันที่-เวลา</th>
-                      <th className="py-3 px-4 whitespace-nowrap">เลข 5 หลัก</th>
                       <th className="py-3 px-4 whitespace-nowrap">ชื่อ-นามสกุล</th>
+                      <th className="py-3 px-4 whitespace-nowrap">ตำแหน่ง/สถานะ</th>
                       <th className="py-3 px-4">ชุดข้อสอบ</th>
                       <th className="py-3 px-4 text-right whitespace-nowrap">คะแนน</th>
                       <th className="py-3 px-4 whitespace-nowrap">สถานะ</th>
@@ -1336,11 +1338,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                             timeStyle: 'short',
                           })}
                         </td>
-                        <td className="py-3.5 px-4 font-mono font-semibold text-slate-800 tabular-nums whitespace-nowrap">
-                          {sub.studentCode}
-                        </td>
                         <td className="py-3.5 px-4 font-medium text-slate-900 whitespace-nowrap">
                           {sub.studentName}
+                        </td>
+                        <td className="py-3.5 px-4 text-xs font-semibold text-slate-700 whitespace-nowrap">
+                          {sub.memberRole || '-'}
                         </td>
                         <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate">
                           {sub.examTitle}
@@ -1997,8 +1999,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <h3 className="text-base font-bold text-slate-900">
                   เกียรติบัตรของ {previewSubmission.studentName}
                 </h3>
-                <p className="text-xs font-mono text-slate-500 tabular-nums">
-                  เลขประจำตัว {previewSubmission.studentCode}
+                <p className="text-xs text-slate-500">
+                  ตำแหน่ง/สถานะ: {previewSubmission.memberRole || '-'}
                 </p>
               </div>
               <button
