@@ -41,6 +41,7 @@ import {
 } from '../utils/certificateRenderer';
 import { GoogleSignInButton } from './GoogleSignInButton';
 import { CertificateCard, CertificateTemplateLivePreview } from './CertificateCard';
+import { parseJsonResponse } from '../utils/apiJson';
 
 interface AdminPortalProps {
   adminToken: string;
@@ -136,11 +137,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       fetch('/api/submissions', { headers: { 'x-admin-token': token } }),
     ]);
     if (examsRes.ok) {
-      const d = await examsRes.json();
+      const d = await parseJsonResponse<{ exams?: ExamSet[] }>(examsRes);
       setAdminExams(d.exams || []);
     }
     if (subsRes.ok) {
-      const d = await subsRes.json();
+      const d = await parseJsonResponse<{ submissions?: SubmissionRecord[] }>(subsRes);
       setSubmissions(d.submissions || []);
     }
   };
@@ -213,7 +214,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           questions: draftQuestions,
         }),
       });
-      const data = await res.json();
+      const data = await parseJsonResponse<{
+        exam: ExamSet;
+        error?: string;
+      }>(res);
       if (!res.ok) {
         throw new Error(data.error || 'บันทึกชุดข้อสอบไม่สำเร็จ');
       }

@@ -23,6 +23,7 @@ import {
   loadImageElement,
   renderCustomCertificateCanvas,
 } from '../utils/certificateRenderer';
+import { parseJsonResponse } from '../utils/apiJson';
 
 interface CertificateCardProps {
   submission: SubmissionRecord;
@@ -130,7 +131,10 @@ export const CertificateCard: React.FC<CertificateCardProps> = ({
           studentCode: localSubmission.studentCode,
         }),
       });
-      const data = await res.json();
+      const data = await parseJsonResponse<{
+        submission: SubmissionRecord;
+        error?: string;
+      }>(res);
       if (!res.ok) {
         throw new Error(data.error || 'ไม่สามารถอัปเดตชื่อบนเกียรติบัตรได้');
       }

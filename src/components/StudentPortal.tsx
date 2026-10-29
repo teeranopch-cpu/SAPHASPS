@@ -23,6 +23,7 @@ import {
 import { CertificateCard } from './CertificateCard';
 import { appendSubmissionToSheet, getAccessToken } from '../services/googleSheetsService';
 import { formatThaiDisplayDate, getBangkokDateString } from '../utils/certificateRenderer';
+import { parseJsonResponse } from '../utils/apiJson';
 
 interface StudentPortalProps {
   studentName: string;
@@ -89,7 +90,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         `/api/submissions?studentCode=${encodeURIComponent(studentCode)}`
       );
       if (res.ok) {
-        const d = await res.json();
+        const d = await parseJsonResponse<{ submissions?: SubmissionRecord[] }>(res);
         setMyHistory(d.submissions || []);
       }
     } finally {
@@ -151,7 +152,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         }),
       });
 
-      const data = await res.json();
+      const data = await parseJsonResponse<{
+        submission: SubmissionRecord;
+        settings?: Partial<IntegrationSettings>;
+        error?: string;
+      }>(res);
       if (!res.ok) {
         throw new Error(data.error || 'เกิดข้อผิดพลาดในการส่งคำตอบ');
       }

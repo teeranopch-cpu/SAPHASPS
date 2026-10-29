@@ -10,6 +10,7 @@ import { initGoogleAuth } from './services/googleSheetsService';
 import { UnifiedLogin } from './components/UnifiedLogin';
 import { StudentPortal } from './components/StudentPortal';
 import { AdminPortal } from './components/AdminPortal';
+import { parseJsonResponse } from './utils/apiJson';
 
 type ActiveSession =
   | { role: 'student'; fullName: string; studentCode: string }
@@ -43,11 +44,11 @@ export default function App() {
         fetch('/api/settings'),
       ]);
       if (examsRes.ok) {
-        const d = await examsRes.json();
+        const d = await parseJsonResponse<{ exams?: ExamSet[] }>(examsRes);
         setExams(d.exams || []);
       }
       if (settingsRes.ok) {
-        const d = await settingsRes.json();
+        const d = await parseJsonResponse<{ settings?: IntegrationSettings }>(settingsRes);
         if (d.settings) setIntegrationSettings(d.settings);
       }
     } finally {

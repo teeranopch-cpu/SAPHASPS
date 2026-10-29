@@ -132,7 +132,7 @@ export function readAndOptimizeTemplateImage(file: File): Promise<string> {
       const img = new Image();
       img.onerror = () => reject(new Error('ไฟล์รูปภาพไม่ถูกต้อง'));
       img.onload = () => {
-        const maxDim = 2200;
+        const maxDim = 2000;
         let targetW = img.naturalWidth || 1600;
         let targetH = img.naturalHeight || 1131;
         if (targetW > maxDim || targetH > maxDim) {
@@ -152,7 +152,12 @@ export function readAndOptimizeTemplateImage(file: File): Promise<string> {
         ctx.fillRect(0, 0, targetW, targetH);
         ctx.drawImage(img, 0, 0, targetW, targetH);
         const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-        resolve(canvas.toDataURL(outputType, 0.92));
+        let resultDataUrl = canvas.toDataURL(outputType, 0.9);
+        // Keep payload well under Vercel Serverless 4.5 MB request body limit
+        if (resultDataUrl.length > 2_400_000) {
+          resultDataUrl = canvas.toDataURL('image/jpeg', 0.86);
+        }
+        resolve(resultDataUrl);
       };
       img.src = rawDataUrl;
     };

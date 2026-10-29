@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRight, AlertCircle } from 'lucide-react';
+import { parseJsonResponse } from '../utils/apiJson';
 
 interface UnifiedLoginProps {
   onStudentLogin: (fullName: string, studentCode: string) => void;
@@ -31,8 +32,12 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: '00000', password: '00000' }),
         });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
+        const data = await parseJsonResponse<{
+          ok?: boolean;
+          adminToken?: string;
+          error?: string;
+        }>(res);
+        if (!res.ok || !data.ok || !data.adminToken) {
           throw new Error(data.error || 'เข้าสู่ระบบแอดมินไม่สำเร็จ');
         }
         onAdminLoginSuccess(data.adminToken);
