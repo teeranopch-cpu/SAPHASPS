@@ -702,49 +702,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           </div>
         </div>
 
-        {/* 3. คะแนนที่ได้ */}
-        <div className="py-3 space-y-2">
-          <p className="text-xs font-bold text-slate-800">3. คะแนนที่ได้</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="flex justify-between text-[11px] text-slate-600 mb-1">
-                <span>ขนาดอักษร</span>
-                <span className="font-mono tabular-nums">{cfg.scoreSize} px</span>
-              </div>
-              <input
-                type="range"
-                min={14}
-                max={70}
-                value={cfg.scoreSize}
-                onChange={(e) =>
-                  setCfg((p) => ({ ...p, scoreSize: Number(e.target.value) }))
-                }
-                className="w-full accent-[#0f2942]"
-              />
-            </div>
-            <div>
-              <div className="flex justify-between text-[11px] text-slate-600 mb-1">
-                <span>ตำแหน่งแนวตั้ง</span>
-                <span className="font-mono tabular-nums">{cfg.scoreY}%</span>
-              </div>
-              <input
-                type="range"
-                min={8}
-                max={94}
-                value={cfg.scoreY}
-                onChange={(e) =>
-                  setCfg((p) => ({ ...p, scoreY: Number(e.target.value) }))
-                }
-                className="w-full accent-[#0f2942]"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* 4. ให้ไว้ ณ วันที่ เดือน พ.ศ. */}
+        {/* 3. ให้ไว้ ณ วันที่ เดือน พ.ศ. */}
         <div className="py-3 space-y-2">
           <p className="text-xs font-bold text-slate-800">
-            4. ให้ไว้ ณ วันที่ เดือน พ.ศ.
+            3. ให้ไว้ ณ วันที่ เดือน พ.ศ.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -843,7 +804,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-sm text-slate-600">
-              เมื่อสร้างข้อสอบใหม่ แอดมินสามารถอัปโหลดภาพพื้นหลังเกียรติบัตรของตนเอง โดยระบบจะวางเฉพาะ ชื่อผู้สอบ, ชื่อแบบทดสอบ, คะแนนที่ได้ และวันที่ ลงบนเกียรติบัตรให้อัตโนมัติ
+              เมื่อสร้างข้อสอบใหม่ แอดมินสามารถอัปโหลดภาพพื้นหลังเกียรติบัตรของตนเอง โดยระบบจะวางเฉพาะ ชื่อผู้สอบ, ชื่อแบบทดสอบ และวันที่ ลงบนเกียรติบัตรให้อัตโนมัติ
             </p>
             <button
               type="button"
@@ -981,7 +942,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       รูปแบบเกียรติบัตรของชุดข้อสอบนี้ *
                     </h3>
                     <p className="text-xs text-slate-600 mt-0.5">
-                      อัปโหลดรูปพื้นหลังเกียรติบัตร (.PNG หรือ .JPG) ระบบจะพิมพ์เฉพาะ ชื่อ-นามสกุล, ชื่อแบบทดสอบ, คะแนนที่ได้ และวันที่เผยแพร่เกียรติบัตร ลงบนแม่แบบนี้
+                      อัปโหลดรูปพื้นหลังเกียรติบัตร (.PNG หรือ .JPG) ระบบจะพิมพ์เฉพาะ ชื่อ-นามสกุล, ชื่อแบบทดสอบ และวันที่เผยแพร่เกียรติบัตร ลงบนแม่แบบนี้
                     </p>
                   </div>
 
@@ -1028,7 +989,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     </div>
                     <div className="lg:col-span-5 space-y-4">
                       <p className="text-xs font-semibold text-slate-800">
-                        ปรับตำแหน่งข้อความทั้ง 4 รายการให้ตรงกับช่องว่างของเกียรติบัตรคุณ
+                        ปรับตำแหน่งข้อความทั้ง 3 รายการให้ตรงกับช่องว่างของเกียรติบัตรคุณ
                       </p>
                       {renderPositionControls(certConfig, setCertConfig)}
                     </div>

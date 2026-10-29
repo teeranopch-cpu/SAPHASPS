@@ -350,28 +350,19 @@ export const CertificateCard: React.FC<CertificateCardProps> = ({
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 pt-1">
-                      <div>
-                        <p className="text-slate-500">3. คะแนนที่ได้</p>
-                        <p className="text-sm font-mono font-bold text-slate-900 tabular-nums mt-0.5">
-                          {localSubmission.score}/{localSubmission.totalQuestions} (
-                          {localSubmission.percentage}%)
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">เลขประจำตัว 5 หลัก</p>
-                        <p className="text-sm font-mono font-semibold text-slate-900 tabular-nums mt-0.5">
-                          {localSubmission.studentCode}
-                        </p>
-                      </div>
-                    </div>
-
                     <div className="pt-1">
                       <p className="text-slate-500">
-                        4. วันที่ในเกียรติบัตร (ตรงกับวันที่เผยแพร่เกียรติบัตร)
+                        3. วันที่ในเกียรติบัตร (ตรงกับวันที่เผยแพร่เกียรติบัตร)
                       </p>
                       <p className="text-sm font-semibold text-[#0f2942] mt-0.5">
                         {ceremonialCertDate}
+                      </p>
+                    </div>
+
+                    <div className="pt-1">
+                      <p className="text-slate-500">เลขประจำตัว 5 หลัก</p>
+                      <p className="text-sm font-mono font-semibold text-slate-900 tabular-nums mt-0.5">
+                        {localSubmission.studentCode}
                       </p>
                     </div>
                   </div>
@@ -388,7 +379,7 @@ export const CertificateCard: React.FC<CertificateCardProps> = ({
                     className="mt-0.5 w-4 h-4 accent-[#0f2942] rounded cursor-pointer shrink-0"
                   />
                   <span className="text-xs sm:text-sm font-medium text-slate-800 leading-relaxed">
-                    ข้าพเจ้าได้ตรวจสอบชื่อ-นามสกุล ชื่อแบบทดสอบ คะแนนที่ได้ และวันที่ในเกียรติบัตรถูกต้องครบถ้วนแล้ว
+                    ข้าพเจ้าได้ตรวจสอบชื่อ-นามสกุล ชื่อแบบทดสอบ และวันที่ในเกียรติบัตรถูกต้องครบถ้วนแล้ว
                   </span>
                 </label>
 
@@ -502,7 +493,6 @@ export const CertificateTemplateLivePreview: React.FC<TemplateLivePreviewProps> 
         certificateConfig: cfg,
         studentName: 'เด็กชายธนกฤต รัตนโชติ',
         examTitle: examTitleSample.trim() || 'ชื่อชุดข้อสอบจะปรากฏบริเวณนี้',
-        scoreText: 'คะแนนที่ได้ 5/5 คะแนน (100%)',
         dateText: formatThaiCeremonialDate(effectiveDate),
       },
       1200

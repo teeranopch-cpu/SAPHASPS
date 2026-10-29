@@ -119,7 +119,6 @@ export interface CertificateRenderPayload {
   certificateConfig?: CertificateLayoutConfig;
   studentName: string;
   examTitle: string;
-  scoreText: string;
   dateText: string;
 }
 
@@ -241,12 +240,7 @@ export function drawCertificateOntoCanvas(
     ctx.fillText(line, centerX, examStartY + idx * lineGap);
   });
 
-  // 3. คะแนนที่ได้
-  const scorePx = Math.max(10, Math.round(cfg.scoreSize * scaleFactor));
-  ctx.font = `600 ${scorePx}px "Sarabun", "IBM Plex Sans Thai", sans-serif`;
-  ctx.fillText(payload.scoreText, centerX, (cfg.scoreY / 100) * height);
-
-  // 4. ให้ไว้ ณ วันที่ เดือน พ.ศ. (ตรงกับวันที่เผยแพร่เกียรติบัตร)
+  // 3. ให้ไว้ ณ วันที่ เดือน พ.ศ. (ตรงกับวันที่เผยแพร่เกียรติบัตร)
   const datePx = Math.max(10, Math.round(cfg.dateSize * scaleFactor));
   ctx.font = `400 ${datePx}px "Sarabun", "IBM Plex Sans Thai", sans-serif`;
   ctx.fillText(payload.dateText, centerX, (cfg.dateY / 100) * height);
@@ -278,7 +272,6 @@ export function buildSubmissionRenderPayload(
     certificateConfig: submission.certificateConfig,
     studentName: submission.studentName,
     examTitle: submission.examTitle,
-    scoreText: `คะแนนที่ได้ ${submission.score}/${submission.totalQuestions} คะแนน (${submission.percentage}%)`,
     dateText: formatThaiCeremonialDate(effectiveCertDate),
   };
 }
