@@ -58,49 +58,22 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
     setError(null);
     setSuccessInfo(null);
 
-    const trimmedPin = loginPin.trim();
-    if (!/^\d{6}$/.test(trimmedPin)) {
-      setError('กรุณากรอกรหัส PIN เป็นตัวเลข 6 หลัก');
-      return;
-    }
-
-    // Admin login with PIN 000000
-    if (trimmedPin === '000000') {
-      setSubmitting(true);
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pin: '000000' }),
-        });
-        const data = await parseJsonResponse<{
-          ok?: boolean;
-          role?: string;
-          adminToken?: string;
-          error?: string;
-        }>(res);
-        if (!res.ok || !data.ok || !data.adminToken) {
-          throw new Error(data.error || 'เข้าสู่ระบบผู้ดูแลระบบไม่สำเร็จ');
-        }
-        onAdminLoginSuccess(data.adminToken);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'เข้าสู่ระบบไม่สำเร็จ');
-      } finally {
-        setSubmitting(false);
-      }
-      return;
-    }
-
     const effectivePrefix =
       loginPrefixSelect === 'อื่นๆ' ? loginCustomPrefix.trim() : loginPrefixSelect.trim();
     const trimmedName = loginFullName.trim();
+    const trimmedPin = loginPin.trim();
+    const isAdminCredentials = trimmedName === '000000' && trimmedPin === '000000';
 
-    if (!effectivePrefix) {
+    if (!isAdminCredentials && !effectivePrefix) {
       setError('กรุณาเลือกหรือระบุคำนำหน้าชื่อ');
       return;
     }
     if (!trimmedName) {
       setError('กรุณากรอกชื่อ-นามสกุล');
+      return;
+    }
+    if (!/^\d{6}$/.test(trimmedPin)) {
+      setError('กรุณากรอกรหัส PIN เป็นตัวเลข 6 หลัก');
       return;
     }
 
@@ -171,7 +144,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
       return;
     }
     if (trimmedPin === '000000') {
-      setError('รหัส PIN 000000 สงวนไว้สำหรับผู้ดูแลระบบ กรุณาตั้งรหัส PIN อื่น');
+      setError('รหัส PIN 6 หลักนี้มีคนใช้แล้ว กรุณาตั้งรหัส PIN อื่นที่ไม่ซ้ำกับคนอื่น');
       return;
     }
 

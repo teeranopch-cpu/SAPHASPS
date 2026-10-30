@@ -59,6 +59,7 @@ function getServerDb() {
 }
 
 const VAULT_ID = process.env.SAPHA_VAULT_ID || 'sapha_sps_prod_v1_8c4e9f2a7b1d603e';
+const ADMIN_NAME = '000000';
 const ADMIN_PIN = '000000';
 const ADMIN_TOKEN = 'SAPHA SPS-admin-000000';
 
@@ -358,15 +359,16 @@ export function createApiRouter() {
     });
   });
 
-  // Admin Login (PIN 000000)
+  // Admin Login (Name 000000 + PIN 000000)
   router.post('/admin/login', (req, res) => {
-    const { pin, password } = req.body || {};
-    const candidate = String(pin ?? password ?? '').trim();
-    if (candidate === ADMIN_PIN) {
+    const { fullName, username, name, pin, password } = req.body || {};
+    const candidateName = normalizeSpaces(fullName ?? username ?? name ?? '');
+    const candidatePin = String(pin ?? password ?? '').trim();
+    if (candidateName === ADMIN_NAME && candidatePin === ADMIN_PIN) {
       res.json({ ok: true, adminToken: ADMIN_TOKEN });
       return;
     }
-    res.status(401).json({ ok: false, error: 'รหัส PIN ผู้ดูแลระบบไม่ถูกต้อง' });
+    res.status(401).json({ ok: false, error: 'ชื่อผู้ใช้งานหรือรหัส PIN ผู้ดูแลระบบไม่ถูกต้อง' });
   });
 
   // Member Registration (Unique 6-Digit PIN, Prefix, Name, Position/Status)
@@ -396,8 +398,8 @@ export function createApiRouter() {
         return;
       }
       if (cleanPin === ADMIN_PIN) {
-        res.status(400).json({
-          error: 'รหัส PIN 000000 สงวนไว้สำหรับผู้ดูแลระบบ กรุณาตั้งรหัส PIN อื่น',
+        res.status(409).json({
+          error: 'รหัส PIN 6 หลักนี้มีคนใช้แล้ว กรุณาตั้งรหัส PIN อื่นที่ไม่ซ้ำกับคนอื่น',
         });
         return;
       }
@@ -409,7 +411,7 @@ export function createApiRouter() {
       const existingSnap = await getDoc(memberRef);
       if (existingSnap.exists()) {
         res.status(409).json({
-          error: 'รหัส PIN 6 หลักนี้มีผู้ใช้งานแล้ว กรุณาตั้งรหัส PIN อื่นที่ไม่ซ้ำกับคนอื่น',
+          error: 'รหัส PIN 6 หลักนี้มีคนใช้แล้ว กรุณาตั้งรหัส PIN อื่นที่ไม่ซ้ำกับคนอื่น',
         });
         return;
       }
@@ -449,25 +451,30 @@ export function createApiRouter() {
     }
   });
 
-  // Unified Login (Prefix + First/Last Name + 6-Digit PIN, or Admin PIN 000000)
+  // Unified Login (Prefix + First/Last Name + 6-Digit PIN, or Admin Name 000000 + PIN 000000)
   router.post('/auth/login', async (req, res) => {
     try {
       const { prefix, fullName, pin } = req.body || {};
+      const rawFullName = normalizeSpaces(fullName);
       const cleanPin = String(pin || '').trim();
 
+      if (!rawFullName) {
+        res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุล' });
+        return;
+      }
       if (!/^\d{6}$/.test(cleanPin)) {
         res.status(400).json({ error: 'กรุณากรอกรหัส PIN เป็นตัวเลข 6 หลัก' });
         return;
       }
 
-      // Admin shortcut: PIN 000000
-      if (cleanPin === ADMIN_PIN) {
+      const cleanPrefix = normalizeSpaces(prefix).slice(0, 40);
+      const cleanNameBody = stripDuplicatePrefix(fullName, cleanPrefix).slice(0, 160);
+
+      // Admin authentication: requires BOTH name === '000000' AND pin === '000000'
+      if ((rawFullName === ADMIN_NAME || cleanNameBody === ADMIN_NAME) && cleanPin === ADMIN_PIN) {
         res.json({ ok: true, role: 'admin', adminToken: ADMIN_TOKEN });
         return;
       }
-
-      const cleanPrefix = normalizeSpaces(prefix).slice(0, 40);
-      const cleanNameBody = stripDuplicatePrefix(fullName, cleanPrefix).slice(0, 160);
 
       if (!cleanPrefix) {
         res.status(400).json({ error: 'กรุณาเลือกหรือระบุคำนำหน้าชื่อ' });
@@ -475,6 +482,14 @@ export function createApiRouter() {
       }
       if (!cleanNameBody) {
         res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุล' });
+        return;
+      }
+
+      // If PIN is 000000 with any non-000000 name, reject without revealing admin PIN or querying members/000000
+      if (cleanPin === ADMIN_PIN) {
+        res.status(401).json({
+          error: 'คำนำหน้าชื่อ หรือ ชื่อ-นามสกุล ไม่ตรงกับข้อมูลที่สมัครสมาชิกไว้กับรหัส PIN นี้',
+        });
         return;
       }
 

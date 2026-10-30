@@ -837,7 +837,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums mb-1">
-            <span>ระบบผู้ดูแล (PIN: 000000)</span>
+            <span>ระบบผู้ดูแลระบบ</span>
             <span aria-hidden="true">·</span>
             <span>ชุดข้อสอบ {adminExams.length} ชุด</span>
             <span aria-hidden="true">·</span>
