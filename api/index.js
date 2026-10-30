@@ -1207,6 +1207,7 @@ export function createApiRouter() {
           id: submissionId,
           examId: exam.id,
           examTitle: exam.title,
+          examPublishDate: exam.publishDate || '',
           certificatePublishDate: exam.certificatePublishDate,
           certificateTemplate,
           certificateConfig: normalizedConfig,
@@ -1273,13 +1274,22 @@ export function createApiRouter() {
         throw err;
       }
 
-      const certificateTemplate = await loadTemplateDataUrl(db, sub.templateId);
+      const [certificateTemplate, examSnap] = await Promise.all([
+        loadTemplateDataUrl(db, sub.templateId),
+        sub.examId
+          ? getDoc(doc(db, 'vaults', VAULT_ID, 'exams', sub.examId)).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      const examPublishDate =
+        examSnap && examSnap.exists() ? examSnap.data().publishDate || '' : '';
+
       res.json({
         ok: true,
         submission: {
           id: sub.id,
           examId: sub.examId,
           examTitle: sub.examTitle,
+          examPublishDate,
           certificatePublishDate: sub.certificatePublishDate,
           certificateTemplate,
           certificateConfig: normalizeCertConfig(sub.certificateConfig),
@@ -1360,18 +1370,33 @@ export function createApiRouter() {
         rawSubs = rawSubs.filter((s) => s.memberPin === memberPin);
       }
 
+      const uniqueExamIds = Array.from(
+        new Set(rawSubs.map((s) => s.examId).filter(Boolean))
+      );
       const uniqueTemplateIds = Array.from(
         new Set(rawSubs.map((s) => s.templateId).filter(Boolean))
       );
-      const tplEntries = await Promise.all(
-        uniqueTemplateIds.map(async (tid) => [tid, await loadTemplateDataUrl(db, tid)])
-      );
+      const [examEntries, tplEntries] = await Promise.all([
+        Promise.all(
+          uniqueExamIds.map(async (eid) => {
+            const eSnap = await getDoc(doc(db, 'vaults', VAULT_ID, 'exams', eid)).catch(
+              () => null
+            );
+            return [eid, eSnap && eSnap.exists() ? eSnap.data().publishDate || '' : ''];
+          })
+        ),
+        Promise.all(
+          uniqueTemplateIds.map(async (tid) => [tid, await loadTemplateDataUrl(db, tid)])
+        ),
+      ]);
+      const examPublishDateMap = new Map(examEntries);
       const tplMap = new Map(tplEntries);
 
       const submissions = rawSubs.map((sub) => ({
         id: sub.id,
         examId: sub.examId,
         examTitle: sub.examTitle,
+        examPublishDate: examPublishDateMap.get(sub.examId) || '',
         certificatePublishDate: sub.certificatePublishDate,
         certificateTemplate: tplMap.get(sub.templateId) || BLANK_CERT_FRAME_SVG,
         certificateConfig: normalizeCertConfig(sub.certificateConfig),

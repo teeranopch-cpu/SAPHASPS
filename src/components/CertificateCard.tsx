@@ -354,7 +354,7 @@ export const CertificateCard: React.FC<CertificateCardProps> = ({
 
                     <div className="pt-1">
                       <p className="text-slate-500">
-                        3. วันที่ในเกียรติบัตร (ตรงกับวันที่เผยแพร่เกียรติบัตร)
+                        3. วันที่ในเกียรติบัตร (ตามวันที่ที่กำหนดไว้ของชุดข้อสอบ)
                       </p>
                       <p className="text-sm font-semibold text-[#0f2942] mt-0.5">
                         {ceremonialCertDate}

@@ -973,7 +973,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                   <div>
                     <label className="block text-sm font-semibold text-slate-800 mb-1.5">
-                      วันที่เผยแพร่ข้อสอบ (ลงข้อสอบล่วงหน้าได้) *
+                      วันที่เผยแพร่ข้อสอบ (เปิดสอบและดาวน์โหลดเกียรติบัตรได้ตั้งแต่วันนี้) *
                     </label>
                     <input
                       type="date"
@@ -989,7 +989,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       className="w-full px-3.5 py-2.5 text-sm font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f2942]"
                     />
                     <p className="text-xs text-slate-500 mt-1 tabular-nums">
-                      เปิดให้เข้าสอบตั้งแต่วันที่:{' '}
+                      เปิดสอบและโหลดเกียรติบัตรตั้งแต่วันที่:{' '}
                       <strong className="text-slate-700">
                         {formatThaiDisplayDate(newPublishDate)}
                       </strong>
@@ -998,7 +998,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                   <div>
                     <label className="block text-sm font-semibold text-slate-800 mb-1.5">
-                      วันที่เผยแพร่เกียรติบัตร (ตรงกับวันที่ในเกียรติบัตร) *
+                      วันที่ในเกียรติบัตร (วันที่ที่ระบุบนใบเกียรติบัตร) *
                     </label>
                     <input
                       type="date"
@@ -1028,7 +1028,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       รูปแบบเกียรติบัตรของชุดข้อสอบนี้ *
                     </h3>
                     <p className="text-xs text-slate-600 mt-0.5">
-                      อัปโหลดรูปพื้นหลังเกียรติบัตร (.PNG หรือ .JPG) ระบบจะพิมพ์เฉพาะ ชื่อ-นามสกุล, ชื่อแบบทดสอบ และวันที่เผยแพร่เกียรติบัตร ลงบนแม่แบบนี้
+                      อัปโหลดรูปพื้นหลังเกียรติบัตร (.PNG หรือ .JPG) ระบบจะพิมพ์เฉพาะ ชื่อ-นามสกุล, ชื่อแบบทดสอบ และวันที่ในเกียรติบัตรที่ลงไว้ ลงบนแม่แบบนี้
                     </p>
                   </div>
 
@@ -1285,11 +1285,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       <p className="text-sm text-slate-600">{exam.description}</p>
                       <div className="flex flex-wrap items-center gap-2 pt-0.5 text-xs text-slate-500 tabular-nums">
                         <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>เผยแพร่ข้อสอบ: {formatThaiDisplayDate(exam.publishDate)}</span>
+                        <span>
+                          เผยแพร่ข้อสอบและโหลดเกียรติบัตร: {formatThaiDisplayDate(exam.publishDate)}
+                        </span>
                         <span aria-hidden="true">·</span>
                         <span>
-                          วันที่เผยแพร่และแสดงในเกียรติบัตร:{' '}
-                          {formatThaiDisplayDate(exam.certificatePublishDate)}
+                          วันที่ในเกียรติบัตร: {formatThaiDisplayDate(exam.certificatePublishDate)}
                         </span>
                       </div>
                     </div>
@@ -1818,7 +1819,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-800 mb-1.5">
-                    วันที่เผยแพร่ข้อสอบ *
+                    วันที่เผยแพร่ข้อสอบ (เปิดสอบและโหลดเกียรติบัตร) *
                   </label>
                   <input
                     type="date"
@@ -1834,7 +1835,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-800 mb-1.5">
-                    วันที่เผยแพร่เกียรติบัตร (แสดงบนเกียรติบัตร) *
+                    วันที่ในเกียรติบัตร (แสดงบนใบเกียรติบัตร) *
                   </label>
                   <input
                     type="date"
@@ -1999,7 +2000,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   ตั้งค่ากำหนดการเผยแพร่และเกียรติบัตร: {editingCertExam.title}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  กำหนดวันเผยแพร่ข้อสอบ วันเผยแพร่เกียรติบัตร และปรับตำแหน่งข้อความบนแม่แบบเกียรติบัตร
+                  กำหนดวันเผยแพร่ข้อสอบ (เปิดให้ดาวน์โหลดเกียรติบัตรตามวันนี้) วันที่แสดงบนใบเกียรติบัตร และปรับตำแหน่งข้อความ
                 </p>
               </div>
               <button
@@ -2014,7 +2015,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 border border-slate-200 rounded-xl p-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-800 mb-1.5">
-                  วันที่เผยแพร่ข้อสอบ (ลงล่วงหน้าได้)
+                  วันที่เผยแพร่ข้อสอบ (เปิดสอบและโหลดเกียรติบัตร)
                 </label>
                 <input
                   type="date"
@@ -2029,7 +2030,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-800 mb-1.5">
-                  วันที่เผยแพร่เกียรติบัตร (ตรงกับวันที่ในเกียรติบัตร)
+                  วันที่ในเกียรติบัตร (แสดงบนใบเกียรติบัตร)
                 </label>
                 <input
                   type="date"

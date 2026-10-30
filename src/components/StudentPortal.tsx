@@ -255,8 +255,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         ) : (
           <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-200 overflow-hidden">
             {myHistory.map((item) => {
+              const linkedExam = exams.find((e) => e.id === item.examId);
+              const effectiveExamPublishDate =
+                item.examPublishDate || linkedExam?.publishDate || '';
               const certReady =
-                !item.certificatePublishDate || todayBangkok >= item.certificatePublishDate;
+                !effectiveExamPublishDate || todayBangkok >= effectiveExamPublishDate;
               return (
                 <div
                   key={item.id}
@@ -316,7 +319,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                         </button>
                       ) : (
                         <span className="text-xs font-medium text-amber-700 whitespace-nowrap">
-                          เผยแพร่เกียรติบัตร {formatThaiDisplayDate(item.certificatePublishDate)}
+                          ดาวน์โหลดได้เมื่อเผยแพร่ข้อสอบ {formatThaiDisplayDate(effectiveExamPublishDate)}
                         </span>
                       )
                     )}
@@ -396,10 +399,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               const isAvailable = exam.isPublished && exam.publishDate <= todayBangkok;
               const passedSub = passedByExamId.get(exam.id);
               const isPassed = Boolean(passedSub);
-              const certReady =
-                passedSub &&
-                (!passedSub.certificatePublishDate ||
-                  todayBangkok >= passedSub.certificatePublishDate);
+              const certReady = Boolean(passedSub) && isAvailable;
 
               return (
                 <div
@@ -467,7 +467,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                           isPassed ? 'text-emerald-800/85' : 'text-slate-500'
                         }`}
                       >
-                        วันที่เผยแพร่และแสดงในเกียรติบัตร:{' '}
+                        วันที่ระบุในเกียรติบัตร:{' '}
                         {formatThaiDisplayDate(exam.certificatePublishDate)}
                       </p>
                     )}
@@ -535,6 +535,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
   // EVALUATION RESULT & ONLINE CERTIFICATE VIEW
   if (result) {
+    const effectiveExamPublishDate =
+      result.examPublishDate || selectedExam?.publishDate || '';
+    const isCertDownloadable =
+      !effectiveExamPublishDate || todayBangkok >= effectiveExamPublishDate;
+
     return (
       <div className="max-w-4xl mx-auto py-8 sm:py-10 px-4 space-y-8">
         <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8">
@@ -602,9 +607,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           <div className="pt-5 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-600">
               {result.passed
-                ? !result.certificatePublishDate || todayBangkok >= result.certificatePublishDate
+                ? isCertDownloadable
                   ? 'คุณผ่านเกณฑ์การประเมิน สามารถตรวจสอบความถูกต้องและดาวน์โหลดเกียรติบัตรด้านล่างได้ทันที'
-                  : `คุณผ่านเกณฑ์การประเมิน เกียรติบัตรจะเปิดให้ตรวจสอบและดาวน์โหลดในวันที่ ${formatThaiDisplayDate(result.certificatePublishDate)}`
+                  : `คุณผ่านเกณฑ์การประเมิน เกียรติบัตรจะเปิดให้ตรวจสอบและดาวน์โหลดตามวันเผยแพร่ข้อสอบ (${formatThaiDisplayDate(effectiveExamPublishDate)})`
                 : 'คะแนนยังไม่ถึงเกณฑ์ร้อยละ 80 สามารถกดทำแบบทดสอบใหม่อีกครั้งได้'}
             </p>
 
@@ -633,7 +638,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         </div>
 
         {result.passed && (
-          !result.certificatePublishDate || todayBangkok >= result.certificatePublishDate ? (
+          isCertDownloadable ? (
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
                 <h2 className="text-lg font-bold text-slate-900">
@@ -641,7 +646,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 </h2>
                 {result.certificatePublishDate && (
                   <p className="text-xs text-slate-500 tabular-nums">
-                    วันที่ในเกียรติบัตรตรงกับวันที่เผยแพร่เกียรติบัตร:{' '}
+                    วันที่ระบุในเกียรติบัตร:{' '}
                     {formatThaiDisplayDate(result.certificatePublishDate)}
                   </p>
                 )}
@@ -662,10 +667,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <Calendar className="w-5 h-5 text-[#0f2942] shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <h2 className="text-base font-bold text-slate-900">
-                  รอเผยแพร่เกียรติบัตรในวันที่ {formatThaiDisplayDate(result.certificatePublishDate)}
+                  เปิดให้ดาวน์โหลดเกียรติบัตรในวันเผยแพร่ข้อสอบ ({formatThaiDisplayDate(effectiveExamPublishDate)})
                 </h2>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  ระบบบันทึกผลการสอบผ่านของคุณเรียบร้อยแล้ว คุณสามารถกลับมาที่เมนู &ldquo;ประวัติและเกียรติบัตรของฉัน&rdquo; เพื่อตรวจสอบและดาวน์โหลดเกียรติบัตรได้ตั้งแต่วันที่กำหนด โดยวันที่ในเกียรติบัตรจะระบุเป็น ให้ไว้ ณ วันที่ {formatThaiDisplayDate(result.certificatePublishDate)}
+                  ระบบบันทึกผลการสอบผ่านของคุณเรียบร้อยแล้ว คุณสามารถกลับมาที่เมนู &ldquo;ประวัติและเกียรติบัตรของฉัน&rdquo; เพื่อตรวจสอบและดาวน์โหลดเกียรติบัตรได้ตั้งแต่วันที่เผยแพร่ข้อสอบ โดยวันที่ในเกียรติบัตรจะระบุตามที่กำหนดไว้คือ ให้ไว้ ณ วันที่ {formatThaiDisplayDate(result.certificatePublishDate)}
                 </p>
               </div>
             </div>

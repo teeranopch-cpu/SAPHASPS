@@ -54,8 +54,8 @@ export interface ExamSet {
   title: string;
   description: string;
   passingPercent: number;
-  publishDate: string;            // YYYY-MM-DD (วันที่เผยแพร่ข้อสอบ)
-  certificatePublishDate: string; // YYYY-MM-DD (วันที่เผยแพร่เกียรติบัตร / วันที่แสดงบนเกียรติบัตร)
+  publishDate: string;            // YYYY-MM-DD (วันที่เผยแพร่ข้อสอบ และเปิดให้ดาวน์โหลดเกียรติบัตร)
+  certificatePublishDate: string; // YYYY-MM-DD (วันที่ที่ลงไว้สำหรับแสดงบนใบเกียรติบัตร)
   isPublished: boolean;
   certificateTemplate: string;
   certificateConfig: CertificateLayoutConfig;
@@ -76,7 +76,8 @@ export interface SubmissionRecord {
   id: string;
   examId: string;
   examTitle: string;
-  certificatePublishDate: string; // YYYY-MM-DD
+  examPublishDate?: string;       // YYYY-MM-DD (วันเผยแพร่ข้อสอบ ใช้กำหนดสิทธิ์การเปิดดาวน์โหลดเกียรติบัตร)
+  certificatePublishDate: string; // YYYY-MM-DD (วันที่ที่ลงไว้สำหรับพิมพ์บนเกียรติบัตร)
   certificateTemplate: string;
   certificateConfig: CertificateLayoutConfig;
   prefix: string;
